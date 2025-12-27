@@ -1,0 +1,129 @@
+# 网站和 API 监控配置示例
+# 文件路径: config/vmagent/targets/websites.json
+
+# ===== 配置说明 =====
+#
+# 1. targets 数组:
+#    - 填写完整的 URL（包含 http:// 或 https://）
+#    - 用于 HTTP/HTTPS 可用性探测
+#    - 支持多个 URL，用逗号分隔
+#
+# 2. labels 标签:
+#    - service_name: 服务名称（推荐：英文+横杠格式）
+#    - service_type: 固定为 "http"
+#    - environment: 环境（production/staging/test）
+#    - priority: 告警优先级（critical=紧急/warning=警告）
+#
+# 3. 自动生效:
+#    - 修改此文件后 30 秒自动生效
+#    - 无需重启任何服务
+#
+# 4. 监控指标:
+#    - 网站是否可访问（HTTP 状态码）
+#    - 响应时间（probe_duration_seconds）
+#    - SSL 证书有效期（如果是 HTTPS）
+#
+# 5. 探测模块:
+#    - 默认使用 http_2xx 模块（接受 2xx 状态码）
+#    - 配置在 config/vmagent/prometheus.yml
+#
+# ===== 使用示例 =====
+
+[
+  {
+    "targets": [
+      "https://www.google.com"
+    ],
+    "labels": {
+      "service_name": "google",
+      "service_type": "http",
+      "priority": "info"
+    }
+  }
+]
+
+# ===== 扩展示例 =====
+#
+# 监控公司网站:
+# [
+#   {
+#     "targets": [
+#       "https://www.company.com",          # 公司官网
+#       "https://www.company.com/login",    # 登录页面
+#       "https://api.company.com/health"    # API 健康检查
+#     ],
+#     "labels": {
+#       "service_type": "http",
+#       "environment": "production",
+#       "priority": "critical"
+#     }
+#   }
+# ]
+#
+# 监控内部应用:
+# [
+#   {
+#     "targets": [
+#       "http://oa.company.local",         # 内部 OA 系统
+#       "http://jenkins.company.local",    # Jenkins
+#       "http://gitlab.company.local"      # GitLab
+#     ],
+#     "labels": {
+#       "service_type": "http",
+#       "environment": "internal",
+#       "priority": "warning"
+#     }
+#   }
+# ]
+#
+# 按服务分组:
+# [
+#   {
+#     "targets": ["https://www.company.com", "https://www.company.com/api"],
+#     "labels": {
+#       "service_name": "company-website",
+#       "service_type": "http",
+#       "priority": "critical"
+#     }
+#   },
+#   {
+#     "targets": ["http://test.company.local"],
+#     "labels": {
+#       "service_name": "test-environment",
+#       "service_type": "http",
+#       "priority": "info"
+#     }
+#   }
+# ]
+#
+# 监控 API 端点:
+# [
+#   {
+#     "targets": [
+#       "https://api.company.com/v1/health",
+#       "https://api.company.com/v1/status",
+#       "https://api.company.com/v1/metrics"
+#     ],
+#     "labels": {
+#       "service_name": "api-gateway",
+#       "service_type": "http",
+#       "api_version": "v1",
+#       "priority": "critical"
+#     }
+#   }
+# ]
+#
+# 包含详细信息:
+# [
+#   {
+#     "targets": ["https://www.company.com"],
+#     "labels": {
+#       "service_name": "company-website",
+#       "service_type": "http",
+#       "environment": "production",
+#       "team": "frontend",
+#       "owner": "web-team@company.com",
+#       "priority": "critical"
+#     }
+#   }
+# ]

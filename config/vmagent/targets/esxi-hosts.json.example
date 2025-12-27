@@ -1,0 +1,95 @@
+# ESXi 主机配置示例
+# 文件路径: config/vmagent/targets/esxi-hosts.json
+
+# ===== 配置说明 =====
+#
+# 1. targets 数组:
+#    - 填写 ESXi 主机的管理 IP 地址
+#    - 用于 ICMP Ping 探测（检测主机是否在线）
+#    - 支持多个 IP，用逗号分隔
+#
+# 2. labels 标签:
+#    - device_name: 主机唯一名称（推荐格式: esxi-集群-编号）
+#    - device_type: 固定为 "esxi"
+#    - cluster: 所属集群名称（如: production/test/dr）
+#    - location: 物理位置（如: datacenter-1/rack-A01）
+#    - priority: 告警优先级（critical=紧急/warning=警告）
+#
+# 3. 自动生效:
+#    - 修改此文件后 30 秒自动生效
+#    - 无需重启任何服务
+#
+# 4. 用途:
+#    - ICMP Ping 探测（检测 ESXi 是否在线）
+#    - 配合 Telegraf VMware 监控使用
+#    - 注意: ESXi 的详细监控由 Telegraf 负责
+#
+# ===== 使用示例 =====
+
+[
+  {
+    "targets": [
+      "192.168.2.10"
+    ],
+    "labels": {
+      "device_name": "esxi-01",
+      "device_type": "esxi",
+      "cluster": "production",
+      "location": "datacenter-1",
+      "priority": "critical"
+    }
+  }
+]
+
+# ===== 扩展示例 =====
+#
+# 监控整个生产集群:
+# [
+#   {
+#     "targets": [
+#       "192.168.2.10",    # ESXi-01
+#       "192.168.2.11",    # ESXi-02
+#       "192.168.2.12",    # ESXi-03
+#       "192.168.2.13"     # ESXi-04
+#     ],
+#     "labels": {
+#       "device_type": "esxi",
+#       "cluster": "production",
+#       "location": "datacenter-1",
+#       "priority": "critical"
+#     }
+#   }
+# ]
+#
+# 按集群分组:
+# [
+#   {
+#     "targets": ["192.168.2.10", "192.168.2.11"],
+#     "labels": {
+#       "cluster": "production",
+#       "priority": "critical"
+#     }
+#   },
+#   {
+#     "targets": ["192.168.3.10", "192.168.3.11"],
+#     "labels": {
+#       "cluster": "test",
+#       "priority": "warning"
+#     }
+#   }
+# ]
+#
+# 包含详细信息:
+# [
+#   {
+#     "targets": ["192.168.2.10"],
+#     "labels": {
+#       "device_name": "esxi-prod-01",
+#       "device_type": "esxi",
+#       "cluster": "production",
+#       "vcenter": "vcenter.company.com",
+#       "rack": "A01",
+#       "priority": "critical"
+#     }
+#   }
+# ]

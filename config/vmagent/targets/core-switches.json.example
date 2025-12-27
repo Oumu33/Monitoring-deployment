@@ -1,0 +1,100 @@
+# 核心交换机配置示例
+# 文件路径: config/vmagent/targets/core-switches.json
+
+# ===== 配置说明 =====
+#
+# 1. targets 数组:
+#    - 填写交换机的 IP 地址
+#    - 支持多个 IP，用逗号分隔
+#    - 示例: ["192.168.1.100", "192.168.1.101", "192.168.1.102"]
+#
+# 2. labels 标签:
+#    - device_name: 设备唯一名称（推荐格式: 类型-位置-编号）
+#    - device_type: 设备类型（switch/router/firewall）
+#    - device_tier: 网络层级（core=核心/distribution=汇聚/access=接入）
+#    - location: 地理位置（datacenter-1/floor-2/building-A）
+#    - priority: 告警优先级（critical=紧急/warning=警告/info=信息）
+#
+# 3. 自动生效:
+#    - 修改此文件后 30 秒自动生效
+#    - 无需重启任何服务
+#
+# 4. 用途:
+#    - 用于 ICMP Ping 探测（检测设备是否在线）
+#    - 监控网络连通性和延迟
+#
+# ===== 使用示例 =====
+
+[
+  {
+    "targets": [
+      "192.168.1.100"
+    ],
+    "labels": {
+      "device_name": "core-switch-1",
+      "device_type": "switch",
+      "device_tier": "core",
+      "location": "datacenter-1",
+      "priority": "critical"
+    }
+  }
+]
+
+# ===== 扩展示例 =====
+#
+# 添加多个核心交换机:
+# [
+#   {
+#     "targets": [
+#       "192.168.1.100",    # 核心交换机 1
+#       "192.168.1.101",    # 核心交换机 2
+#       "192.168.1.102"     # 核心交换机 3
+#     ],
+#     "labels": {
+#       "device_type": "switch",
+#       "device_tier": "core",
+#       "location": "datacenter-1",
+#       "priority": "critical"
+#     }
+#   }
+# ]
+#
+# 按机房分组:
+# [
+#   {
+#     "targets": ["192.168.1.100", "192.168.1.101"],
+#     "labels": {
+#       "device_tier": "core",
+#       "location": "datacenter-1",
+#       "priority": "critical"
+#     }
+#   },
+#   {
+#     "targets": ["192.168.2.100", "192.168.2.101"],
+#     "labels": {
+#       "device_tier": "core",
+#       "location": "datacenter-2",
+#       "priority": "critical"
+#     }
+#   }
+# ]
+#
+# 按厂商分组:
+# [
+#   {
+#     "targets": ["192.168.1.100", "192.168.1.101"],
+#     "labels": {
+#       "device_type": "switch",
+#       "vendor": "cisco",
+#       "priority": "critical"
+#     }
+#   },
+#   {
+#     "targets": ["192.168.1.110", "192.168.1.111"],
+#     "labels": {
+#       "device_type": "switch",
+#       "vendor": "huawei",
+#       "priority": "critical"
+#     }
+#   }
+# ]
