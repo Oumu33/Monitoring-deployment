@@ -1,111 +1,238 @@
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-  external_labels:
-    cluster: 'monitoring-cluster'
-    environment: 'production'
+# ===================================================================
+# vmagent 配置文件
+# 作用: 定义指标采集目标和采集策略
+# 文档: https://docs.victoriametrics.com/vmagent.html
+# ===================================================================
 
+# ===== 全局配置 =====
+global:
+  # 采集间隔: 每隔多久抓取一次指标
+  # 建议: 15s（通用）, 30s（低频）, 5s（高频监控）
+  scrape_interval: 15s
+
+  # 采集超时: 单次采集的最大等待时间
+  # 建议: 小于 scrape_interval，防止采集堆积
+  scrape_timeout: 10s
+
+  # 外部标签: 添加到所有指标的全局标签
+  # 用途: 区分不同集群、环境、数据中心
+  external_labels:
+    cluster: 'monitoring-cluster'      # 集群名称
+    environment: 'production'          # 环境标识
+    datacenter: 'dc1'                  # 数据中心（可选）
+
+# ===== 采集任务配置 =====
 scrape_configs:
-  # VictoriaMetrics 自监控
+
+  # ===== 1. 监控系统自监控 =====
+  # 用途: 监控 VictoriaMetrics 生态组件自身的健康状态
+
+  # VictoriaMetrics 时序数据库自监控
   - job_name: 'victoriametrics'
+    scrape_interval: 30s               # 降低采集频率，减少自监控开销
     static_configs:
       - targets: ['victoriametrics:8428']
         labels:
           service: 'victoriametrics'
+          component: 'database'
+    # 指标过滤: 只保留关键指标，减少存储
+    metric_relabel_configs:
+      # 保留核心指标
+      - source_labels: [__name__]
+        regex: 'vm_(rows|free_disk_space_bytes|data_size_bytes|insert_requests_total|http_requests_total|cache_.*)'
+        action: keep
 
-  # vmagent 自监控
+  # vmagent 采集代理自监控
   - job_name: 'vmagent'
+    scrape_interval: 30s
     static_configs:
       - targets: ['vmagent:8429']
         labels:
           service: 'vmagent'
+          component: 'collector'
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'vmagent_(remotewrite_.*|rows_.*|http_requests_total)'
+        action: keep
 
-  # vmalert 监控
+  # vmalert 告警引擎自监控
   - job_name: 'vmalert'
+    scrape_interval: 30s
     static_configs:
       - targets: ['vmalert:8880']
         labels:
           service: 'vmalert'
+          component: 'alerting'
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'vmalert_(alerting_rules_.*|execution_.*|http_requests_total)'
+        action: keep
 
-  # Alertmanager 监控
+  # Alertmanager 告警管理自监控
   - job_name: 'alertmanager'
+    scrape_interval: 30s
     static_configs:
       - targets: ['alertmanager:9093']
         labels:
           service: 'alertmanager'
+          component: 'notification'
 
-  # Node Exporter - Linux 主机监控
+  # ===== 2. Linux 主机监控 (Node Exporter) =====
+  # 用途: 监控 Linux 服务器的 CPU、内存、磁盘、网络等指标
+  # 文档: https://github.com/prometheus/node_exporter
+
   - job_name: 'node-exporter'
+    scrape_interval: 15s               # 主机监控保持默认频率
+    scrape_timeout: 10s
+
     static_configs:
+      # 监控主机自身
       - targets: ['node-exporter:9100']
         labels:
           service: 'node-exporter'
           instance: 'monitoring-host'
-      # 添加更多 Linux 主机
+          role: 'monitoring'           # 主机角色
+          priority: 'P1'               # 告警优先级
+
+      # 添加更多 Linux 主机示例:
       # - targets: ['192.168.1.10:9100']
       #   labels:
-      #     instance: 'linux-server-01'
+      #     instance: 'web-server-01'
+      #     role: 'web'
+      #     priority: 'P0'              # P0=最高优先级
+      #
       # - targets: ['192.168.1.11:9100']
       #   labels:
-      #     instance: 'linux-server-02'
+      #     instance: 'db-server-01'
+      #     role: 'database'
+      #     priority: 'P0'
 
-  # SNMP Exporter - 网络设备监控
+    # 指标过滤: Node Exporter 指标非常多，过滤不需要的
+    metric_relabel_configs:
+      # 删除不需要的网络接口指标（docker、lo 等虚拟接口）
+      - source_labels: [__name__, device]
+        regex: 'node_network_.+;(docker.*|veth.*|br-.*|lo)'
+        action: drop
+
+      # 删除不需要的文件系统指标（tmpfs、devtmpfs 等临时文件系统）
+      - source_labels: [__name__, fstype]
+        regex: 'node_filesystem_.+;(tmpfs|devtmpfs|overlay|nsfs|fuse.*)'
+        action: drop
+
+      # 删除不需要的 CPU mode（保留 idle, iowait, system, user）
+      - source_labels: [__name__, mode]
+        regex: 'node_cpu_seconds_total;(irq|softirq|steal|guest.*)'
+        action: drop
+
+  # ===== 3. 网络设备监控 (SNMP Exporter) =====
+  # 用途: 监控交换机、路由器、防火墙等网络设备
+  # 文档: https://github.com/prometheus/snmp_exporter
+
   - job_name: 'snmp-exporter'
+    scrape_interval: 30s               # 网络设备降低采集频率
+    scrape_timeout: 20s                # SNMP 查询较慢，增加超时时间
+
     static_configs:
       - targets:
-        # 交换机示例
-        - 192.168.1.100  # 请替换为实际的设备 IP
+        # 核心交换机示例
+        - 192.168.1.100                # 请替换为实际的设备 IP
         # - 192.168.1.101
-        # 路由器示例
-        # - 192.168.1.200
-    metrics_path: /snmp
+        # - 192.168.1.102
+
+        # 建议: 使用文件服务发现管理大量设备
+        # 参考: config/vmagent/targets/core-switches.json
+
+        labels:
+          device_type: 'switch'        # 设备类型
+          device_tier: 'core'          # 网络层级
+          priority: 'P0'               # 核心设备优先级最高
+
+    # SNMP Exporter 特殊配置
+    metrics_path: /snmp                # 探测路径
     params:
-      module: [if_mib]  # 使用默认的 if_mib 模块
+      module: [if_mib]                 # 使用的 SNMP 模块
+
+    # Relabel 配置: 将目标 IP 作为参数传递给 SNMP Exporter
     relabel_configs:
       - source_labels: [__address__]
-        target_label: __param_target
+        target_label: __param_target   # 设置 SNMP 查询目标
       - source_labels: [__param_target]
-        target_label: instance
+        target_label: instance         # 设置实例标签
       - target_label: __address__
-        replacement: snmp-exporter:9116
+        replacement: snmp-exporter:9116  # 实际采集地址
+      # 保留原始标签（device_type, device_tier 等）
+      - action: labelmap
+        regex: __meta_(.+)
 
-  # 注意: Telegraf VMware 监控直接推送数据到 VictoriaMetrics
+    # 指标过滤: SNMP 指标非常多，只保留关键接口
+    metric_relabel_configs:
+      # 只保留 UP 状态的接口（ifOperStatus == 1）
+      - source_labels: [ifOperStatus]
+        regex: '2'                     # 2 = DOWN
+        action: drop
+
+      # 删除管理接口（通常以 mgmt/Management 开头）
+      - source_labels: [ifDescr]
+        regex: '(mgmt.*|Management.*)'
+        action: drop
+
+  # ===== 4. VMware 虚拟化监控 =====
+  # 注意: Telegraf 直接推送数据到 VictoriaMetrics
   # 不需要在此处配置采集任务
+  # 配置文件: config/telegraf/telegraf.conf
 
-  # ===== Blackbox Exporter - 服务可用性探测 =====
+  # ===== 5. 服务可用性探测 (Blackbox Exporter) =====
+  # 用途: 监控网站、API、网络设备的可用性
+  # 文档: https://github.com/prometheus/blackbox_exporter
 
-  # HTTP/HTTPS 网站探测 - 文件服务发现
+  # 5.1 HTTP/HTTPS 网站探测 - 文件服务发现
   - job_name: 'blackbox-http'
-    metrics_path: /probe
+    scrape_interval: 30s               # HTTP 探测不需要太频繁
+    scrape_timeout: 15s                # HTTP 请求可能较慢
+
+    metrics_path: /probe               # Blackbox 探测路径
     params:
-      module: [http_2xx]  # 使用 http_2xx 模块
+      module: [http_2xx]               # 使用 http_2xx 模块（期望 2xx 状态码）
+
+    # 文件服务发现: 从 JSON 文件读取目标
+    # 优势: 修改 JSON 文件 30 秒自动生效，无需重启
     file_sd_configs:
       - files:
         - /etc/prometheus/targets/websites.json
-        refresh_interval: 30s
+        refresh_interval: 30s          # 每 30 秒检查文件变化
+
     relabel_configs:
       - source_labels: [__address__]
-        target_label: __param_target
+        target_label: __param_target   # 设置探测目标 URL
       - source_labels: [__param_target]
-        target_label: instance
+        target_label: instance         # 设置实例标签
       - target_label: __address__
-        replacement: blackbox-exporter:9115
+        replacement: blackbox-exporter:9115  # Blackbox Exporter 地址
       - source_labels: [__param_target]
         target_label: probe_type
-        replacement: 'http'
+        replacement: 'http'            # 添加探测类型标签
+      # 保留文件中定义的所有标签（service_name, priority 等）
+      - action: labelmap
+        regex: __meta_(.+)
 
-  # HTTPS 探测（检查 SSL 证书）- 静态配置（可选）
+  # 5.2 HTTPS SSL 证书检查（静态配置）
   - job_name: 'blackbox-https-ssl'
+    scrape_interval: 3600s             # SSL 证书检查每小时一次即可
+    scrape_timeout: 15s
+
     metrics_path: /probe
     params:
-      module: [http_2xx_check_ssl]
+      module: [http_2xx_check_ssl]     # SSL 证书检查模块
+
     static_configs:
       - targets:
-        # 示例: 监控 HTTPS 网站和 SSL 证书
+        # HTTPS 网站示例
         # - https://www.company.com
         # - https://api.company.com
         labels:
           probe_type: 'https_ssl'
+          priority: 'P1'
+
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -114,17 +241,23 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox-exporter:9115
 
-  # ICMP Ping 探测 - 文件服务发现（推荐）
+  # 5.3 ICMP Ping 探测 - 文件服务发现
   - job_name: 'blackbox-icmp'
+    scrape_interval: 30s               # Ping 探测频率
+    scrape_timeout: 10s
+
     metrics_path: /probe
     params:
-      module: [icmp]
+      module: [icmp]                   # ICMP Ping 模块
+
     file_sd_configs:
       - files:
+        # 支持多个文件和通配符
         - /etc/prometheus/targets/core-switches.json
         - /etc/prometheus/targets/esxi-hosts.json
-        - /etc/prometheus/targets/*-switches.json  # 支持通配符
+        - /etc/prometheus/targets/*-switches.json
         refresh_interval: 30s
+
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -135,24 +268,36 @@ scrape_configs:
       - source_labels: [__param_target]
         target_label: probe_type
         replacement: 'icmp'
+      # 保留设备标签（device_name, device_type, priority 等）
+      - action: labelmap
+        regex: __meta_(.+)
 
-  # TCP 端口探测（数据库、SSH 等）
+  # 5.4 TCP 端口探测（数据库、SSH 等）
   - job_name: 'blackbox-tcp'
+    scrape_interval: 60s               # TCP 端口探测每分钟一次
+    scrape_timeout: 10s
+
     metrics_path: /probe
     params:
-      module: [tcp_connect]
+      module: [tcp_connect]            # TCP 连接模块
+
     static_configs:
       - targets:
-        # 数据库端口探测
-        # - 192.168.1.20:3306   # MySQL
-        # - 192.168.1.21:5432   # PostgreSQL
-        # - 192.168.1.22:6379   # Redis
+        # 数据库端口探测示例
+        # - 192.168.1.20:3306          # MySQL
+        # - 192.168.1.21:5432          # PostgreSQL
+        # - 192.168.1.22:6379          # Redis
+
         # SSH 端口探测
         # - 192.168.1.10:22
+
         # vCenter 端口探测
         # - vcenter.company.com:443
+
         labels:
           probe_type: 'tcp'
+          priority: 'P2'
+
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -161,9 +306,42 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox-exporter:9115
 
-  # Blackbox Exporter 自监控
+  # 5.5 Blackbox Exporter 自监控
   - job_name: 'blackbox-exporter'
+    scrape_interval: 30s
     static_configs:
       - targets: ['blackbox-exporter:9115']
         labels:
           service: 'blackbox-exporter'
+          component: 'prober'
+
+# ===================================================================
+# 配置说明:
+#
+# 1. 采集间隔 (scrape_interval):
+#    - 默认: 15s（适合大多数场景）
+#    - 低频: 30-60s（网络设备、SSL 证书检查）
+#    - 高频: 5-10s（关键业务监控）
+#
+# 2. 指标过滤 (metric_relabel_configs):
+#    - 作用: 减少不需要的指标，节省存储空间
+#    - 建议: 先运行一段时间，分析指标使用情况后再过滤
+#
+# 3. 文件服务发现 (file_sd_configs):
+#    - 优势: 动态更新目标，无需重启 vmagent
+#    - 配置: config/vmagent/targets/*.json
+#    - 文档: docs/FILE-SERVICE-DISCOVERY.md
+#
+# 4. 标签最佳实践:
+#    - priority: P0/P1/P2/P3（告警优先级）
+#    - role: web/database/cache（服务角色）
+#    - environment: production/staging/test（环境）
+#    - team: infrastructure/devops（负责团队）
+#
+# 5. 性能优化:
+#    - 合理设置 scrape_timeout（必须 < scrape_interval）
+#    - 使用 metric_relabel_configs 过滤不需要的指标
+#    - 对低频数据使用更长的采集间隔
+#
+# 更多文档: docs/VMAGENT-CONFIG-GUIDE.md
+# ===================================================================

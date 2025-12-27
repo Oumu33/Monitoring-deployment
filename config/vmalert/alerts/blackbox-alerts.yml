@@ -1,28 +1,85 @@
+# ===================================================================
+# Blackbox Exporter 告警规则
+# 用途: 监控服务可用性（HTTP、ICMP、TCP、DNS）
+# 文档: https://github.com/prometheus/blackbox_exporter
+# ===================================================================
+
 groups:
   - name: blackbox-http-alerts
     interval: 30s
     rules:
+
       # HTTP/HTTPS 探测失败
       - alert: WebsiteDown
-        expr: probe_success{job="blackbox-http"} == 0 or probe_success{job="blackbox-https-ssl"} == 0
+        expr: probe_success{job=~"blackbox-http|blackbox-https-ssl"} == 0
         for: 2m
         labels:
           severity: critical
+          priority: P0
           category: availability
+          component: website
         annotations:
-          summary: "网站 {{ $labels.instance }} 无法访问"
-          description: "网站 {{ $labels.instance }} 已经无法访问超过 2 分钟"
+          summary: "🔴 网站 {{ $labels.instance }} 无法访问"
+          description: |
+            **网站**: {{ $labels.instance }}
+            **服务名称**: {{ $labels.service_name }}
+            **探测类型**: {{ $labels.probe_type }}
 
-      # HTTP 响应时间过长
-      - alert: WebsiteSlow
+            **可能原因**:
+            - 网站服务宕机
+            - DNS 解析失败
+            - 网络不可达
+            - 防火墙阻止
+
+            **处理步骤**:
+            1. 在浏览器访问确认: {{ $labels.instance }}
+            2. 检查服务状态: `systemctl status nginx/apache`
+            3. 检查端口: `netstat -tuln | grep 80/443`
+            4. 查看服务日志
+          runbook_url: "https://your-wiki.com/runbooks/website-down"
+
+      # HTTP 响应时间过长 - Warning
+      - alert: WebsiteSlowWarning
         expr: probe_duration_seconds{job="blackbox-http"} > 2
         for: 5m
         labels:
           severity: warning
+          priority: P2
           category: performance
+          component: website
         annotations:
-          summary: "网站 {{ $labels.instance }} 响应缓慢"
-          description: "网站 {{ $labels.instance }} 响应时间为 {{ $value | humanizeDuration }}"
+          summary: "⚠️ 网站 {{ $labels.instance }} 响应缓慢"
+          description: |
+            **网站**: {{ $labels.instance }}
+            **响应时间**: {{ $value | humanizeDuration }}
+
+            **处理步骤**:
+            1. 检查服务器负载
+            2. 检查数据库性能
+            3. 分析慢查询日志
+            4. 优化应用代码
+          runbook_url: "https://your-wiki.com/runbooks/website-slow"
+
+      # HTTP 响应时间过长 - Critical
+      - alert: WebsiteSlowCritical
+        expr: probe_duration_seconds{job="blackbox-http"} > 5
+        for: 3m
+        labels:
+          severity: critical
+          priority: P1
+          category: performance
+          component: website
+        annotations:
+          summary: "🔴 网站 {{ $labels.instance }} 响应严重缓慢"
+          description: |
+            **紧急**: 响应时间达到 {{ $value | humanizeDuration }}
+            **影响**: 用户体验严重下降
+
+            **立即行动**:
+            1. 重启 Web 服务
+            2. 检查是否受到攻击
+            3. 启用缓存或 CDN
+          runbook_url: "https://your-wiki.com/runbooks/website-slow"
 
       # HTTP 状态码异常
       - alert: WebsiteHTTPStatusCode
@@ -30,10 +87,28 @@ groups:
         for: 2m
         labels:
           severity: warning
+          priority: P2
           category: availability
+          component: website
         annotations:
-          summary: "网站 {{ $labels.instance }} 返回异常状态码"
-          description: "网站 {{ $labels.instance }} 返回状态码 {{ $value }}"
+          summary: "⚠️ 网站 {{ $labels.instance }} 返回异常状态码"
+          description: |
+            **网站**: {{ $labels.instance }}
+            **状态码**: {{ $value }}
+
+            **常见状态码**:
+            - 400: 错误请求
+            - 401/403: 权限问题
+            - 404: 页面不存在
+            - 500: 服务器内部错误
+            - 502: 网关错误
+            - 503: 服务不可用
+
+            **处理步骤**:
+            1. 查看 Web 服务日志
+            2. 检查配置文件
+            3. 检查后端服务状态
+          runbook_url: "https://your-wiki.com/runbooks/http-status-code"
 
       # SSL 证书即将过期（30 天内）
       - alert: SSLCertificateExpiringSoon
@@ -41,10 +116,20 @@ groups:
         for: 1h
         labels:
           severity: warning
+          priority: P2
           category: security
+          component: ssl
         annotations:
-          summary: "{{ $labels.instance }} SSL 证书即将过期"
-          description: "{{ $labels.instance }} 的 SSL 证书将在 {{ $value | humanize }} 天后过期"
+          summary: "⚠️ {{ $labels.instance }} SSL 证书即将过期"
+          description: |
+            **网站**: {{ $labels.instance }}
+            **剩余天数**: {{ $value | humanize }} 天
+
+            **处理步骤**:
+            1. 准备续期证书
+            2. 联系证书提供商
+            3. 更新证书并重启服务
+          runbook_url: "https://your-wiki.com/runbooks/ssl-certificate-expiring"
 
       # SSL 证书即将过期（7 天内）
       - alert: SSLCertificateExpiringCritical
@@ -52,10 +137,20 @@ groups:
         for: 1h
         labels:
           severity: critical
+          priority: P0
           category: security
+          component: ssl
         annotations:
-          summary: "{{ $labels.instance }} SSL 证书紧急过期警告"
-          description: "{{ $labels.instance }} 的 SSL 证书将在 {{ $value | humanize }} 天后过期，请立即续期"
+          summary: "🔴 {{ $labels.instance }} SSL 证书紧急过期警告"
+          description: |
+            **紧急**: 证书将在 {{ $value | humanize }} 天后过期
+            **影响**: 网站将显示不安全警告，用户无法访问
+
+            **立即行动**:
+            1. 紧急申请/续期证书
+            2. 部署新证书
+            3. 验证证书有效性
+          runbook_url: "https://your-wiki.com/runbooks/ssl-certificate-expiring"
 
       # SSL 证书已过期
       - alert: SSLCertificateExpired
@@ -63,24 +158,51 @@ groups:
         for: 1m
         labels:
           severity: critical
+          priority: P0
           category: security
+          component: ssl
         annotations:
-          summary: "{{ $labels.instance }} SSL 证书已过期"
-          description: "{{ $labels.instance }} 的 SSL 证书已经过期"
+          summary: "🔴 {{ $labels.instance }} SSL 证书已过期"
+          description: |
+            **紧急**: SSL 证书已经过期
+            **影响**: 网站无法正常访问
+
+            **立即行动**:
+            1. 立即部署新证书
+            2. 重启 Web 服务
+          runbook_url: "https://your-wiki.com/runbooks/ssl-certificate-expired"
 
   - name: blackbox-icmp-alerts
     interval: 30s
     rules:
+
       # ICMP Ping 探测失败（设备不可达）
       - alert: HostDown
         expr: probe_success{job="blackbox-icmp"} == 0
         for: 2m
         labels:
           severity: critical
+          priority: P0
           category: availability
+          component: network
         annotations:
-          summary: "主机 {{ $labels.instance }} 无法 Ping 通"
-          description: "主机 {{ $labels.instance }} 已经无法 Ping 通超过 2 分钟"
+          summary: "🔴 主机 {{ $labels.instance }} 无法 Ping 通"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **设备名称**: {{ $labels.device_name }}
+            **设备类型**: {{ $labels.device_type }}
+
+            **可能原因**:
+            - 设备宕机
+            - 网络不可达
+            - 防火墙阻止 ICMP
+
+            **处理步骤**:
+            1. 检查设备电源和连接
+            2. 登录设备控制台
+            3. 检查网络路由
+            4. 检查防火墙规则
+          runbook_url: "https://your-wiki.com/runbooks/host-down"
 
       # ICMP 丢包率过高
       - alert: HighPacketLoss
@@ -88,10 +210,25 @@ groups:
         for: 5m
         labels:
           severity: warning
+          priority: P2
           category: network
+          component: connectivity
         annotations:
-          summary: "主机 {{ $labels.instance }} 丢包率过高"
-          description: "主机 {{ $labels.instance }} 丢包率为 {{ $value | humanize }}%"
+          summary: "⚠️ 主机 {{ $labels.instance }} 丢包率过高"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **丢包率**: {{ $value | humanizePercentage }}
+
+            **可能原因**:
+            - 网络拥塞
+            - 链路质量差
+            - 设备过载
+
+            **处理步骤**:
+            1. 持续 Ping 观察: `ping -c 100 {{ $labels.instance }}`
+            2. 检查网络链路
+            3. 检查设备负载
+          runbook_url: "https://your-wiki.com/runbooks/high-packet-loss"
 
       # ICMP 延迟过高
       - alert: HighICMPLatency
@@ -99,24 +236,49 @@ groups:
         for: 5m
         labels:
           severity: warning
+          priority: P2
           category: network
+          component: latency
         annotations:
-          summary: "主机 {{ $labels.instance }} 网络延迟过高"
-          description: "主机 {{ $labels.instance }} Ping 延迟为 {{ $value | humanizeDuration }}"
+          summary: "⚠️ 主机 {{ $labels.instance }} 网络延迟过高"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **Ping 延迟**: {{ $value | humanizeDuration }}
+
+            **处理步骤**:
+            1. 检查网络路径: `traceroute {{ $labels.instance }}`
+            2. 检查设备负载
+            3. 检查链路带宽
+          runbook_url: "https://your-wiki.com/runbooks/high-latency"
 
   - name: blackbox-tcp-alerts
     interval: 30s
     rules:
+
       # TCP 端口无法连接
       - alert: TCPPortDown
         expr: probe_success{job="blackbox-tcp"} == 0
         for: 2m
         labels:
           severity: critical
+          priority: P1
           category: availability
+          component: service
         annotations:
-          summary: "TCP 端口 {{ $labels.instance }} 无法连接"
-          description: "TCP 端口 {{ $labels.instance }} 已经无法连接超过 2 分钟"
+          summary: "🔴 TCP 端口 {{ $labels.instance }} 无法连接"
+          description: |
+            **服务地址**: {{ $labels.instance }}
+
+            **可能原因**:
+            - 服务未启动
+            - 端口被占用
+            - 防火墙阻止
+
+            **处理步骤**:
+            1. 检查服务状态
+            2. 检查端口监听: `netstat -tuln`
+            3. 检查防火墙规则
+          runbook_url: "https://your-wiki.com/runbooks/tcp-port-down"
 
       # TCP 连接时间过长
       - alert: TCPConnectionSlow
@@ -124,21 +286,63 @@ groups:
         for: 5m
         labels:
           severity: warning
+          priority: P2
           category: performance
+          component: service
         annotations:
-          summary: "TCP 端口 {{ $labels.instance }} 连接缓慢"
-          description: "TCP 端口 {{ $labels.instance }} 连接时间为 {{ $value | humanizeDuration }}"
+          summary: "⚠️ TCP 端口 {{ $labels.instance }} 连接缓慢"
+          description: |
+            **服务地址**: {{ $labels.instance }}
+            **连接时间**: {{ $value | humanizeDuration }}
+
+            **处理步骤**:
+            1. 检查服务负载
+            2. 检查网络延迟
+            3. 优化服务性能
+          runbook_url: "https://your-wiki.com/runbooks/tcp-connection-slow"
 
   - name: blackbox-exporter-health
     interval: 30s
     rules:
+
       # Blackbox Exporter 服务宕机
       - alert: BlackboxExporterDown
         expr: up{job="blackbox-exporter"} == 0
         for: 2m
         labels:
           severity: critical
+          priority: P1
           category: monitoring
+          component: blackbox
         annotations:
-          summary: "Blackbox Exporter 服务宕机"
-          description: "Blackbox Exporter 服务已经宕机超过 2 分钟，无法进行服务可用性探测"
+          summary: "🔴 Blackbox Exporter 服务宕机"
+          description: |
+            **影响**: 无法进行服务可用性探测
+
+            **处理步骤**:
+            1. 检查容器状态: `docker ps | grep blackbox`
+            2. 查看日志: `docker logs blackbox-exporter`
+            3. 重启服务: `docker-compose restart blackbox-exporter`
+          runbook_url: "https://your-wiki.com/runbooks/blackbox-exporter-down"
+
+# ===================================================================
+# 告警规则说明:
+#
+# 1. Blackbox 探测类型:
+#    - HTTP: 网站可用性、响应时间、状态码
+#    - HTTPS SSL: SSL 证书有效期
+#    - ICMP: 网络连通性、丢包率、延迟
+#    - TCP: 端口可用性、连接时间
+#
+# 2. 告警优先级:
+#    - 网站宕机: P0（影响用户访问）
+#    - SSL 证书过期: P0（安全风险）
+#    - 网络延迟/丢包: P2（性能问题）
+#
+# 3. SSL 证书监控:
+#    - 30 天: Warning（提醒准备）
+#    - 7 天: Critical（紧急续期）
+#    - 已过期: Critical（立即处理）
+#
+# 更多文档: docs/BLACKBOX-MONITORING-GUIDE.md
+# ===================================================================

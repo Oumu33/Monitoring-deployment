@@ -1,16 +1,35 @@
+# ===================================================================
+# 监控系统自身健康告警
+# 用途: 监控 VictoriaMetrics 生态组件的健康状态
+# ===================================================================
+
 groups:
   - name: monitoring-system-alerts
     interval: 30s
     rules:
+
+      # ===== 核心组件宕机告警 =====
+
       # VictoriaMetrics 服务宕机
       - alert: VictoriaMetricsDown
         expr: up{job="victoriametrics"} == 0
         for: 2m
         labels:
           severity: critical
+          priority: P0
+          category: monitoring
+          component: database
         annotations:
-          summary: "VictoriaMetrics 时序数据库宕机"
-          description: "VictoriaMetrics 服务已经宕机超过 2 分钟,监控系统无法存储指标数据"
+          summary: "🔴 VictoriaMetrics 时序数据库宕机"
+          description: |
+            **影响**: 监控系统无法存储指标数据，所有监控将中断
+
+            **处理步骤**:
+            1. 检查容器状态: `docker ps | grep victoriametrics`
+            2. 查看日志: `docker logs victoriametrics`
+            3. 检查磁盘空间
+            4. 重启服务: `docker-compose restart victoriametrics`
+          runbook_url: "https://your-wiki.com/runbooks/victoriametrics-down"
 
       # vmagent 服务宕机
       - alert: VMAgentDown
@@ -18,9 +37,20 @@ groups:
         for: 2m
         labels:
           severity: critical
+          priority: P0
+          category: monitoring
+          component: collector
         annotations:
-          summary: "vmagent 采集服务宕机"
-          description: "vmagent 服务已经宕机超过 2 分钟,监控数据无法采集"
+          summary: "🔴 vmagent 采集服务宕机"
+          description: |
+            **影响**: 监控数据无法采集，所有指标将停止更新
+
+            **处理步骤**:
+            1. 检查容器状态: `docker ps | grep vmagent`
+            2. 查看日志: `docker logs vmagent`
+            3. 检查配置文件: `config/vmagent/prometheus.yml`
+            4. 重启服务: `docker-compose restart vmagent`
+          runbook_url: "https://your-wiki.com/runbooks/vmagent-down"
 
       # vmalert 服务宕机
       - alert: VMAlertDown
@@ -28,9 +58,20 @@ groups:
         for: 2m
         labels:
           severity: critical
+          priority: P0
+          category: monitoring
+          component: alerting
         annotations:
-          summary: "vmalert 告警服务宕机"
-          description: "vmalert 服务已经宕机超过 2 分钟,告警规则无法评估"
+          summary: "🔴 vmalert 告警服务宕机"
+          description: |
+            **影响**: 告警规则无法评估，无法发送新的告警通知
+
+            **处理步骤**:
+            1. 检查容器状态: `docker ps | grep vmalert`
+            2. 查看日志: `docker logs vmalert`
+            3. 检查告警规则文件: `config/vmalert/alerts/*.yml`
+            4. 重启服务: `docker-compose restart vmalert`
+          runbook_url: "https://your-wiki.com/runbooks/vmalert-down"
 
       # Alertmanager 服务宕机
       - alert: AlertmanagerDown
@@ -38,39 +79,116 @@ groups:
         for: 2m
         labels:
           severity: critical
+          priority: P0
+          category: monitoring
+          component: notification
         annotations:
-          summary: "Alertmanager 告警管理服务宕机"
-          description: "Alertmanager 服务已经宕机超过 2 分钟,告警通知无法发送"
+          summary: "🔴 Alertmanager 告警管理服务宕机"
+          description: |
+            **影响**: 告警通知无法发送，运维人员收不到告警
 
-      # 采集目标宕机
+            **处理步骤**:
+            1. 检查容器状态: `docker ps | grep alertmanager`
+            2. 查看日志: `docker logs alertmanager`
+            3. 检查配置: `config/alertmanager/alertmanager.yml`
+            4. 重启服务: `docker-compose restart alertmanager`
+          runbook_url: "https://your-wiki.com/runbooks/alertmanager-down"
+
+      # ===== 采集目标宕机告警 =====
+
+      # 通用采集目标宕机
       - alert: TargetDown
         expr: up == 0
         for: 5m
         labels:
           severity: warning
+          priority: P2
+          category: monitoring
+          component: target
         annotations:
-          summary: "监控目标 {{ $labels.instance }} 无法访问"
-          description: "监控目标 {{ $labels.instance }} ({{ $labels.job }}) 已经无法访问超过 5 分钟"
+          summary: "⚠️ 监控目标 {{ $labels.instance }} 无法访问"
+          description: |
+            **目标**: {{ $labels.instance }}
+            **Job**: {{ $labels.job }}
 
-      # VictoriaMetrics 存储空间不足
-      - alert: VMStorageLowSpace
-        expr: (vm_free_disk_space_bytes / (vm_free_disk_space_bytes + vm_data_size_bytes)) * 100 < 10
+            **可能原因**:
+            - Exporter 服务宕机
+            - 网络不可达
+            - 防火墙阻止
+
+            **处理步骤**:
+            1. 检查目标服务状态
+            2. 检查网络连通性
+            3. 查看 vmagent 日志
+          runbook_url: "https://your-wiki.com/runbooks/target-down"
+
+      # ===== 存储和性能告警 =====
+
+      # VictoriaMetrics 存储空间不足 - Warning
+      - alert: VMStorageLowSpaceWarning
+        expr: (vm_free_disk_space_bytes / (vm_free_disk_space_bytes + vm_data_size_bytes)) * 100 < 20
         for: 5m
         labels:
-          severity: critical
+          severity: warning
+          priority: P2
+          category: monitoring
+          component: storage
         annotations:
-          summary: "VictoriaMetrics 存储空间不足"
-          description: "VictoriaMetrics 存储剩余空间低于 10%,当前剩余 {{ $value | humanize }}%"
+          summary: "⚠️ VictoriaMetrics 存储空间不足"
+          description: |
+            **剩余空间**: {{ $value | humanizePercentage }}
 
-      # vmagent 采集缓冲区满
+            **处理步骤**:
+            1. 检查磁盘使用: `df -h`
+            2. 清理旧数据或扩容磁盘
+            3. 调整数据保留期: `--retentionPeriod`
+          runbook_url: "https://your-wiki.com/runbooks/vm-storage-low"
+
+      # VictoriaMetrics 存储空间不足 - Critical
+      - alert: VMStorageLowSpaceCritical
+        expr: (vm_free_disk_space_bytes / (vm_free_disk_space_bytes + vm_data_size_bytes)) * 100 < 10
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: monitoring
+          component: storage
+        annotations:
+          summary: "🔴 VictoriaMetrics 存储空间严重不足"
+          description: |
+            **紧急**: 剩余空间仅 {{ $value | humanizePercentage }}
+            **风险**: 可能导致数据写入失败
+
+            **立即行动**:
+            1. 立即扩容磁盘
+            2. 紧急清理旧数据
+            3. 停止低优先级采集任务
+          runbook_url: "https://your-wiki.com/runbooks/vm-storage-low"
+
+      # vmagent 采集缓冲区满（丢失数据）
       - alert: VMAgentBufferFull
         expr: increase(vmagent_remotewrite_dropped_rows_total[5m]) > 0
         for: 2m
         labels:
           severity: warning
+          priority: P2
+          category: monitoring
+          component: collector
         annotations:
-          summary: "vmagent 丢弃采集数据"
-          description: "vmagent 因缓冲区满而丢弃数据,近 5 分钟丢弃 {{ $value }} 条记录"
+          summary: "⚠️ vmagent 丢弃采集数据"
+          description: |
+            **丢弃数据**: 近 5 分钟丢弃 {{ $value }} 条记录
+
+            **可能原因**:
+            - VictoriaMetrics 写入速度跟不上
+            - 网络延迟过高
+            - 采集频率过高
+
+            **处理步骤**:
+            1. 检查 VictoriaMetrics 性能
+            2. 增加 vmagent 缓冲区: `-remoteWrite.maxDiskUsagePerURL`
+            3. 降低采集频率
+          runbook_url: "https://your-wiki.com/runbooks/vmagent-buffer-full"
 
       # vmalert 规则评估失败
       - alert: VMAlertRuleErrors
@@ -78,9 +196,24 @@ groups:
         for: 2m
         labels:
           severity: warning
+          priority: P2
+          category: monitoring
+          component: alerting
         annotations:
-          summary: "vmalert 告警规则评估失败"
-          description: "vmalert 在近 5 分钟内有 {{ $value }} 次规则评估失败"
+          summary: "⚠️ vmalert 告警规则评估失败"
+          description: |
+            **失败次数**: 近 5 分钟有 {{ $value }} 次评估失败
+
+            **可能原因**:
+            - 告警规则语法错误
+            - VictoriaMetrics 查询超时
+            - 指标数据不存在
+
+            **处理步骤**:
+            1. 查看 vmalert 日志: `docker logs vmalert`
+            2. 检查告警规则文件语法
+            3. 测试 PromQL 表达式
+          runbook_url: "https://your-wiki.com/runbooks/vmalert-rule-errors"
 
       # Alertmanager 通知发送失败
       - alert: AlertmanagerNotificationsFailed
@@ -88,6 +221,40 @@ groups:
         for: 2m
         labels:
           severity: warning
+          priority: P2
+          category: monitoring
+          component: notification
         annotations:
-          summary: "Alertmanager 告警通知发送失败"
-          description: "Alertmanager 在近 5 分钟内有 {{ $value }} 次通知发送失败"
+          summary: "⚠️ Alertmanager 告警通知发送失败"
+          description: |
+            **失败次数**: 近 5 分钟有 {{ $value }} 次通知失败
+
+            **可能原因**:
+            - 邮件服务器不可达
+            - Webhook 地址错误
+            - 认证信息过期
+
+            **处理步骤**:
+            1. 查看 Alertmanager 日志: `docker logs alertmanager`
+            2. 检查接收器配置
+            3. 测试通知渠道连通性
+          runbook_url: "https://your-wiki.com/runbooks/alertmanager-notifications-failed"
+
+# ===================================================================
+# 告警规则说明:
+#
+# 1. 监控系统告警优先级:
+#    - 所有核心组件宕机: P0（最高优先级）
+#    - 存储空间不足 Critical: P0
+#    - 其他性能问题: P2
+#
+# 2. 告警抑制:
+#    - VictoriaMetrics 宕机时，抑制所有其他监控告警
+#    - vmagent 宕机时，抑制 TargetDown 告警
+#
+# 3. 自愈能力:
+#    - 建议配置 Docker restart policy
+#    - 建议配置磁盘空间监控和自动清理
+#
+# 更多文档: docs/MONITORING-SYSTEM-GUIDE.md
+# ===================================================================

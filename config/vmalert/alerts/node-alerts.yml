@@ -1,73 +1,307 @@
+# ===================================================================
+# Node Exporter 告警规则
+# 用途: 监控 Linux 主机的 CPU、内存、磁盘、网络等资源
+# 文档: https://github.com/prometheus/node_exporter
+# ===================================================================
+
 groups:
   - name: node-exporter-alerts
     interval: 30s
     rules:
-      # 主机宕机告警
+
+      # ===== 主机可用性告警 =====
+
+      # 主机宕机告警（Critical）
       - alert: HostDown
         expr: up{job="node-exporter"} == 0
         for: 1m
         labels:
           severity: critical
+          priority: P0                        # 最高优先级
+          category: availability
+          component: host
         annotations:
-          summary: "主机 {{ $labels.instance }} 宕机"
-          description: "主机 {{ $labels.instance }} 已经宕机超过 1 分钟"
+          summary: "🔴 主机 {{ $labels.instance }} 宕机"
+          description: |
+            **影响范围**: 主机 {{ $labels.instance }} 已经宕机超过 1 分钟
+            **可能原因**:
+            - 主机关机或重启
+            - 网络不可达
+            - Node Exporter 进程崩溃
 
-      # CPU 使用率告警
-      - alert: HighCPUUsage
-        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+            **处理步骤**:
+            1. 检查主机是否可 Ping 通: `ping {{ $labels.instance }}`
+            2. 检查主机控制台是否有输出
+            3. 检查 Node Exporter 服务: `systemctl status node_exporter`
+            4. 查看系统日志: `journalctl -xe`
+          runbook_url: "https://your-wiki.com/runbooks/host-down"
+
+      # ===== CPU 告警（分级）=====
+
+      # CPU 使用率告警 - Warning（85%）
+      - alert: HighCPUUsageWarning
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
         for: 5m
         labels:
           severity: warning
+          priority: P2
+          category: performance
+          component: cpu
         annotations:
-          summary: "主机 {{ $labels.instance }} CPU 使用率过高"
-          description: "主机 {{ $labels.instance }} CPU 使用率为 {{ $value | humanize }}%"
+          summary: "⚠️ 主机 {{ $labels.instance }} CPU 使用率较高"
+          description: |
+            **当前状态**: CPU 使用率为 {{ $value | humanizePercentage }}
+            **持续时间**: 已持续 5 分钟
 
-      # 内存使用率告警
-      - alert: HighMemoryUsage
+            **可能原因**:
+            - 业务流量增加
+            - 进程异常占用 CPU
+            - 后台任务运行
+
+            **处理步骤**:
+            1. 查看 CPU 占用进程: `top -c` 或 `htop`
+            2. 查看负载: `uptime`
+            3. 检查是否有异常进程
+            4. 考虑扩容或优化应用
+          runbook_url: "https://your-wiki.com/runbooks/high-cpu"
+
+      # CPU 使用率告警 - Critical（95%）
+      - alert: HighCPUUsageCritical
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 3m
+        labels:
+          severity: critical
+          priority: P1
+          category: performance
+          component: cpu
+        annotations:
+          summary: "🔴 主机 {{ $labels.instance }} CPU 使用率过高"
+          description: |
+            **紧急**: CPU 使用率达到 {{ $value | humanizePercentage }}
+            **影响**: 可能导致服务响应缓慢或不可用
+
+            **立即行动**:
+            1. 登录主机: `ssh {{ $labels.instance }}`
+            2. 查看 CPU 占用: `top -c`
+            3. 杀死异常进程: `kill -9 <PID>`
+            4. 重启服务或扩容
+          runbook_url: "https://your-wiki.com/runbooks/high-cpu"
+
+      # ===== 内存告警（分级）=====
+
+      # 内存使用率告警 - Warning（85%）
+      - alert: HighMemoryUsageWarning
         expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
         for: 5m
         labels:
           severity: warning
+          priority: P2
+          category: performance
+          component: memory
         annotations:
-          summary: "主机 {{ $labels.instance }} 内存使用率过高"
-          description: "主机 {{ $labels.instance }} 内存使用率为 {{ $value | humanize }}%"
+          summary: "⚠️ 主机 {{ $labels.instance }} 内存使用率较高"
+          description: |
+            **当前状态**: 内存使用率为 {{ $value | humanizePercentage }}
+            **可用内存**: {{ with query "node_memory_MemAvailable_bytes{instance='$labels.instance'}" }}{{ . | first | value | humanize1024 }}B{{ end }}
 
-      # 磁盘使用率告警
-      - alert: HighDiskUsage
+            **可能原因**:
+            - 应用程序内存泄漏
+            - 缓存占用过多
+            - 业务负载增加
+
+            **处理步骤**:
+            1. 查看内存使用: `free -h`
+            2. 查看进程内存: `ps aux --sort=-%mem | head -20`
+            3. 清理缓存: `sync && echo 3 > /proc/sys/vm/drop_caches`（谨慎操作）
+            4. 重启占用内存过多的服务
+          runbook_url: "https://your-wiki.com/runbooks/high-memory"
+
+      # 内存使用率告警 - Critical（95%）
+      - alert: HighMemoryUsageCritical
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: performance
+          component: memory
+        annotations:
+          summary: "🔴 主机 {{ $labels.instance }} 内存即将耗尽"
+          description: |
+            **紧急**: 内存使用率达到 {{ $value | humanizePercentage }}
+            **风险**: 可能触发 OOM Killer，导致进程被杀死
+
+            **立即行动**:
+            1. 登录主机检查: `free -h`
+            2. 查看最占内存的进程: `ps aux --sort=-%mem | head`
+            3. 考虑重启服务或扩容
+            4. 检查 dmesg 是否有 OOM 日志: `dmesg | grep -i oom`
+          runbook_url: "https://your-wiki.com/runbooks/high-memory"
+
+      # ===== 磁盘告警（分级）=====
+
+      # 磁盘空间不足告警 - Warning（剩余 15%）
+      - alert: DiskSpaceLowWarning
         expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}) * 100 < 15
         for: 5m
         labels:
           severity: warning
+          priority: P2
+          category: storage
+          component: disk
         annotations:
-          summary: "主机 {{ $labels.instance }} 磁盘空间不足"
-          description: "主机 {{ $labels.instance }} 挂载点 {{ $labels.mountpoint }} 剩余空间为 {{ $value | humanize }}%"
+          summary: "⚠️ 主机 {{ $labels.instance }} 磁盘空间不足"
+          description: |
+            **挂载点**: {{ $labels.mountpoint }}
+            **剩余空间**: {{ $value | humanizePercentage }}
+            **可用容量**: {{ with query "node_filesystem_avail_bytes{instance='$labels.instance',mountpoint='$labels.mountpoint'}" }}{{ . | first | value | humanize1024 }}B{{ end }}
 
-      # 磁盘 I/O 等待时间告警
+            **处理步骤**:
+            1. 检查磁盘使用: `df -h`
+            2. 查找大文件: `du -sh /* | sort -rh | head -10`
+            3. 清理日志: `journalctl --vacuum-time=7d`
+            4. 清理临时文件: `rm -rf /tmp/*`
+            5. 考虑扩容磁盘
+          runbook_url: "https://your-wiki.com/runbooks/low-disk-space"
+
+      # 磁盘空间不足告警 - Critical（剩余 5%）
+      - alert: DiskSpaceLowCritical
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}) * 100 < 5
+        for: 1m
+        labels:
+          severity: critical
+          priority: P0
+          category: storage
+          component: disk
+        annotations:
+          summary: "🔴 主机 {{ $labels.instance }} 磁盘空间严重不足"
+          description: |
+            **紧急**: 挂载点 {{ $labels.mountpoint }} 仅剩 {{ $value | humanizePercentage }} 空间
+            **风险**: 可能导致服务无法写入，系统崩溃
+
+            **立即行动**:
+            1. 立即检查磁盘: `df -h {{ $labels.mountpoint }}`
+            2. 查找最大文件: `find {{ $labels.mountpoint }} -type f -exec du -h {} + | sort -rh | head -20`
+            3. 清理日志和临时文件
+            4. 紧急扩容磁盘
+          runbook_url: "https://your-wiki.com/runbooks/low-disk-space"
+
+      # ===== 磁盘 I/O 告警 =====
+
+      # 磁盘 I/O 等待时间过高
       - alert: HighDiskIOWait
         expr: rate(node_cpu_seconds_total{mode="iowait"}[5m]) * 100 > 10
         for: 5m
         labels:
           severity: warning
+          priority: P2
+          category: performance
+          component: disk
         annotations:
-          summary: "主机 {{ $labels.instance }} 磁盘 I/O 等待时间过高"
-          description: "主机 {{ $labels.instance }} I/O 等待时间为 {{ $value | humanize }}%"
+          summary: "⚠️ 主机 {{ $labels.instance }} 磁盘 I/O 等待时间过高"
+          description: |
+            **I/O 等待**: {{ $value | humanizePercentage }}
+
+            **可能原因**:
+            - 磁盘性能不足
+            - 大量读写操作
+            - 磁盘故障
+
+            **处理步骤**:
+            1. 查看 I/O 状态: `iostat -x 1`
+            2. 查看磁盘读写: `iotop`
+            3. 检查磁盘健康: `smartctl -a /dev/sda`
+            4. 优化应用 I/O 或升级磁盘
+          runbook_url: "https://your-wiki.com/runbooks/high-io-wait"
+
+      # ===== 网络告警 =====
 
       # 网络接口状态告警
       - alert: NetworkInterfaceDown
-        expr: node_network_up == 0
+        expr: node_network_up{device!~"lo|docker.*|veth.*|br-.*"} == 0
         for: 1m
         labels:
           severity: warning
+          priority: P2
+          category: network
+          component: interface
         annotations:
-          summary: "主机 {{ $labels.instance }} 网络接口 {{ $labels.device }} 下线"
-          description: "主机 {{ $labels.instance }} 的网络接口 {{ $labels.device }} 已下线"
+          summary: "⚠️ 主机 {{ $labels.instance }} 网络接口 {{ $labels.device }} 下线"
+          description: |
+            **接口名称**: {{ $labels.device }}
 
-      # 系统负载告警
-      - alert: HighSystemLoad
-        expr: node_load15 / count(node_cpu_seconds_total{mode="idle"}) without(cpu, mode) > 2
+            **处理步骤**:
+            1. 检查网卡状态: `ip link show {{ $labels.device }}`
+            2. 查看网络配置: `ip addr show {{ $labels.device }}`
+            3. 尝试启动接口: `ip link set {{ $labels.device }} up`
+            4. 检查物理连接（网线、光纤等）
+          runbook_url: "https://your-wiki.com/runbooks/network-interface-down"
+
+      # ===== 系统负载告警（分级）=====
+
+      # 系统负载告警 - Warning
+      - alert: HighSystemLoadWarning
+        expr: node_load15 / count(node_cpu_seconds_total{mode="idle"}) without(cpu, mode) > 1.5
         for: 10m
         labels:
           severity: warning
+          priority: P2
+          category: performance
+          component: system
         annotations:
-          summary: "主机 {{ $labels.instance }} 系统负载过高"
-          description: "主机 {{ $labels.instance }} 15分钟平均负载为 {{ $value | humanize }}"
+          summary: "⚠️ 主机 {{ $labels.instance }} 系统负载较高"
+          description: |
+            **15分钟负载**: {{ $value | humanize }}
+            **CPU 核心数**: {{ with query "count(node_cpu_seconds_total{instance='$labels.instance',mode='idle'}) without(cpu, mode)" }}{{ . | first | value }}{{ end }}
+
+            **处理步骤**:
+            1. 查看负载: `uptime`
+            2. 查看进程: `top -c`
+            3. 检查是否有僵尸进程: `ps aux | grep Z`
+          runbook_url: "https://your-wiki.com/runbooks/high-load"
+
+      # 系统负载告警 - Critical
+      - alert: HighSystemLoadCritical
+        expr: node_load15 / count(node_cpu_seconds_total{mode="idle"}) without(cpu, mode) > 2.5
+        for: 5m
+        labels:
+          severity: critical
+          priority: P1
+          category: performance
+          component: system
+        annotations:
+          summary: "🔴 主机 {{ $labels.instance }} 系统负载过高"
+          description: |
+            **紧急**: 15分钟负载达到 {{ $value | humanize }}（CPU 核心数的 {{ $value | humanize }} 倍）
+            **影响**: 系统响应严重变慢
+
+            **立即行动**:
+            1. 查看运行队列: `vmstat 1`
+            2. 识别高负载进程: `ps -eo pid,ppid,cmd,%cpu,%mem --sort=-%cpu | head -20`
+            3. 杀死异常进程或重启服务
+          runbook_url: "https://your-wiki.com/runbooks/high-load"
+
+# ===================================================================
+# 告警规则说明:
+#
+# 1. 告警分级策略:
+#    - Warning (P2): 85-95% 阈值，给运维时间准备
+#    - Critical (P0/P1): >95% 阈值，需要立即处理
+#
+# 2. 标签体系:
+#    - severity: warning/critical（严重程度）
+#    - priority: P0/P1/P2/P3（业务优先级）
+#    - category: availability/performance/storage/network
+#    - component: cpu/memory/disk/network
+#
+# 3. Annotations 内容:
+#    - summary: 简短摘要（显示在通知中）
+#    - description: 详细说明（影响范围、可能原因、处理步骤）
+#    - runbook_url: 处理手册链接
+#
+# 4. 告警抑制:
+#    - 配置在 Alertmanager 中
+#    - 主机宕机时，自动抑制该主机的其他告警
+#
+# 更多文档: docs/ALERT-RULES-GUIDE.md
+# ===================================================================

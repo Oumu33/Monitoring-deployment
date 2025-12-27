@@ -1,136 +1,369 @@
+# ===================================================================
+# Alertmanager 配置文件
+# 用途: 告警路由、分组、抑制和通知管理
+# 文档: https://prometheus.io/docs/alerting/latest/configuration/
+# ===================================================================
+
+# ===== 全局配置 =====
 global:
+  # 告警恢复超时时间
   resolve_timeout: 5m
-  # SMTP 邮件配置(需要根据实际情况配置)
+
+  # SMTP 邮件配置（需要根据实际情况修改）
   smtp_smarthost: 'smtp.example.com:587'
   smtp_from: 'alertmanager@example.com'
   smtp_auth_username: 'alertmanager@example.com'
   smtp_auth_password: 'your-password'
   smtp_require_tls: true
 
-# 告警路由配置
+  # 邮件通知模板（可选）
+  # smtp_hello: 'alertmanager.example.com'
+
+# ===== 告警路由配置 =====
 route:
-  group_by: ['alertname', 'cluster', 'service']
-  group_wait: 10s        # 等待同组的其他告警
-  group_interval: 10s    # 发送同组告警的间隔
-  repeat_interval: 12h   # 重复发送告警的间隔
-  receiver: 'default'    # 默认接收器
+  # 告警分组策略
+  # 相同 alertname、instance 的告警会被聚合到一个通知中
+  group_by: ['alertname', 'instance', 'priority']
 
+  # 分组等待时间: 收到第一个告警后，等待 30 秒看是否有其他同组告警
+  # 目的: 避免短时间内发送多条通知
+  group_wait: 30s
+
+  # 分组间隔: 同一组告警发送后，至少等待 5 分钟才能再次发送
+  # 目的: 避免持续的告警轰炸
+  group_interval: 5m
+
+  # 重复间隔: 同一告警如果一直未恢复，每 12 小时重复发送一次
+  # 目的: 提醒运维人员告警尚未解决
+  repeat_interval: 12h
+
+  # 默认接收器
+  receiver: 'default'
+
+  # ===== 子路由（按优先级和类型分发告警）=====
   routes:
-    # 严重告警立即发送
+    # ===== P0 最高优先级告警（立即通知）=====
     - match:
-        severity: critical
-      receiver: 'critical-alerts'
-      group_wait: 10s
-      repeat_interval: 5m
+        priority: P0
+      receiver: 'p0-alerts'
+      group_wait: 10s          # 仅等待 10 秒
+      repeat_interval: 5m      # 每 5 分钟重复发送
+      continue: false          # 不继续匹配其他路由
 
-    # 警告类告警
+    # ===== P1 紧急告警 =====
     - match:
-        severity: warning
-      receiver: 'warning-alerts'
+        priority: P1
+      receiver: 'p1-alerts'
+      group_wait: 30s
+      repeat_interval: 15m
+      continue: false
+
+    # ===== P2 警告告警 =====
+    - match:
+        priority: P2
+      receiver: 'p2-alerts'
+      group_wait: 1m
+      repeat_interval: 1h
+      continue: false
+
+    # ===== P3 信息告警（低优先级）=====
+    - match:
+        priority: P3
+      receiver: 'p3-alerts'
+      group_wait: 5m
+      repeat_interval: 24h
+      continue: false
+
+    # ===== 监控系统自身告警（特殊处理）=====
+    - match:
+        category: monitoring
+      receiver: 'monitoring-system-alerts'
+      group_by: ['alertname']  # 按告警名称分组
+      group_wait: 10s
+      repeat_interval: 10m
+      continue: false
+
+    # ===== VMware 虚拟化告警 =====
+    - match:
+        category: vmware
+      receiver: 'vmware-alerts'
+      group_by: ['alertname', 'clustername']  # 按集群分组
       group_wait: 30s
       repeat_interval: 30m
 
-    # 监控系统自身告警
-    - match_re:
-        job: (victoriametrics|vmagent|vmalert|alertmanager)
-      receiver: 'monitoring-system-alerts'
-      group_wait: 10s
-      repeat_interval: 10m
+    # ===== 网络设备告警 =====
+    - match:
+        category: network
+      receiver: 'network-alerts'
+      group_by: ['alertname', 'device_type']
+      group_wait: 1m
+      repeat_interval: 30m
 
-# 告警接收器配置
+    # ===== 安全告警（SSL 证书等）=====
+    - match:
+        category: security
+      receiver: 'security-alerts'
+      group_wait: 5m
+      repeat_interval: 6h
+
+# ===== 告警接收器配置 =====
 receivers:
-  # 默认接收器
+  # 默认接收器（兜底）
   - name: 'default'
     webhook_configs:
       - url: 'http://localhost:5001/webhook'
         send_resolved: true
 
-  # 严重告警接收器(邮件 + Webhook)
-  - name: 'critical-alerts'
+  # ===== P0 最高优先级告警接收器 =====
+  # 发送: 邮件 + 短信 + 电话 + Webhook
+  - name: 'p0-alerts'
     email_configs:
-      - to: 'admin@example.com'
+      - to: 'oncall@example.com,admin@example.com'
         headers:
-          Subject: '【严重告警】{{ .GroupLabels.alertname }}'
+          Subject: '🚨🔴【P0 紧急告警】{{ .GroupLabels.alertname }}'
         html: |
+          <h2 style="color: red;">🚨 P0 紧急告警</h2>
+          <p><strong>影响等级</strong>: 最高（业务中断）</p>
+          <p><strong>处理要求</strong>: 立即响应，15 分钟内开始处理</p>
+
           {{ range .Alerts }}
-          <h3>告警详情:</h3>
-          <ul>
-            <li>告警名称: {{ .Labels.alertname }}</li>
-            <li>告警级别: {{ .Labels.severity }}</li>
-            <li>实例: {{ .Labels.instance }}</li>
-            <li>摘要: {{ .Annotations.summary }}</li>
-            <li>描述: {{ .Annotations.description }}</li>
-            <li>开始时间: {{ .StartsAt.Format "2006-01-02 15:04:05" }}</li>
-          </ul>
+          <hr>
+          <h3>{{ .Labels.alertname }}</h3>
+          <table border="1" cellpadding="5">
+            <tr><td><strong>告警级别</strong></td><td>{{ .Labels.priority }}</td></tr>
+            <tr><td><strong>实例</strong></td><td>{{ .Labels.instance }}</td></tr>
+            <tr><td><strong>分类</strong></td><td>{{ .Labels.category }}</td></tr>
+            <tr><td><strong>组件</strong></td><td>{{ .Labels.component }}</td></tr>
+            <tr><td><strong>摘要</strong></td><td>{{ .Annotations.summary }}</td></tr>
+            <tr><td><strong>详情</strong></td><td><pre>{{ .Annotations.description }}</pre></td></tr>
+            <tr><td><strong>处理手册</strong></td><td><a href="{{ .Annotations.runbook_url }}">查看 Runbook</a></td></tr>
+            <tr><td><strong>开始时间</strong></td><td>{{ .StartsAt.Format "2006-01-02 15:04:05" }}</td></tr>
+          </table>
           {{ end }}
-    webhook_configs:
-      - url: 'http://localhost:5001/webhook/critical'
         send_resolved: true
 
-  # 警告告警接收器(仅邮件)
-  - name: 'warning-alerts'
+    # Webhook 示例（可对接企业微信、钉钉、Slack等）
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/p0'
+        send_resolved: true
+
+  # ===== P1 紧急告警接收器 =====
+  - name: 'p1-alerts'
+    email_configs:
+      - to: 'oncall@example.com'
+        headers:
+          Subject: '🔴【P1 紧急】{{ .GroupLabels.alertname }}'
+        html: |
+          <h2 style="color: orange;">🔴 P1 紧急告警</h2>
+          <p><strong>影响等级</strong>: 高（服务降级）</p>
+          <p><strong>处理要求</strong>: 30 分钟内响应</p>
+
+          {{ range .Alerts }}
+          <hr>
+          <h3>{{ .Labels.alertname }}</h3>
+          <p><strong>实例</strong>: {{ .Labels.instance }}</p>
+          <p><strong>摘要</strong>: {{ .Annotations.summary }}</p>
+          <p><strong>详情</strong>: <pre>{{ .Annotations.description }}</pre></p>
+          <p><strong>处理手册</strong>: <a href="{{ .Annotations.runbook_url }}">查看 Runbook</a></p>
+          {{ end }}
+        send_resolved: true
+
+  # ===== P2 警告告警接收器 =====
+  - name: 'p2-alerts'
     email_configs:
       - to: 'ops@example.com'
         headers:
-          Subject: '【警告】{{ .GroupLabels.alertname }}'
+          Subject: '⚠️【P2 警告】{{ .GroupLabels.alertname }}'
         html: |
-          {{ range .Alerts }}
-          <h3>告警详情:</h3>
-          <ul>
-            <li>告警名称: {{ .Labels.alertname }}</li>
-            <li>告警级别: {{ .Labels.severity }}</li>
-            <li>实例: {{ .Labels.instance }}</li>
-            <li>摘要: {{ .Annotations.summary }}</li>
-            <li>描述: {{ .Annotations.description }}</li>
-            <li>开始时间: {{ .StartsAt.Format "2006-01-02 15:04:05" }}</li>
-          </ul>
-          {{ end }}
+          <h2>⚠️ P2 警告告警</h2>
+          <p><strong>影响等级</strong>: 中（潜在风险）</p>
+          <p><strong>处理要求</strong>: 2 小时内处理</p>
 
-  # 监控系统告警接收器
+          {{ range .Alerts }}
+          <p><strong>{{ .Labels.alertname }}</strong>: {{ .Annotations.summary }}</p>
+          {{ end }}
+        send_resolved: true
+
+  # ===== P3 信息告警接收器 =====
+  - name: 'p3-alerts'
+    email_configs:
+      - to: 'ops@example.com'
+        headers:
+          Subject: 'ℹ️【P3 信息】{{ .GroupLabels.alertname }}'
+        send_resolved: true
+
+  # ===== 监控系统告警接收器 =====
   - name: 'monitoring-system-alerts'
     email_configs:
       - to: 'monitoring-admin@example.com'
         headers:
-          Subject: '【监控系统告警】{{ .GroupLabels.alertname }}'
+          Subject: '🔧【监控系统】{{ .GroupLabels.alertname }}'
         html: |
+          <h2>监控系统告警</h2>
           {{ range .Alerts }}
-          <h3>监控系统告警:</h3>
-          <ul>
-            <li>告警名称: {{ .Labels.alertname }}</li>
-            <li>服务: {{ .Labels.job }}</li>
-            <li>实例: {{ .Labels.instance }}</li>
-            <li>摘要: {{ .Annotations.summary }}</li>
-            <li>描述: {{ .Annotations.description }}</li>
-            <li>开始时间: {{ .StartsAt.Format "2006-01-02 15:04:05" }}</li>
-          </ul>
+          <p><strong>服务</strong>: {{ .Labels.job }}</p>
+          <p><strong>摘要</strong>: {{ .Annotations.summary }}</p>
+          <p><strong>详情</strong>: <pre>{{ .Annotations.description }}</pre></p>
           {{ end }}
+        send_resolved: true
 
-# 告警抑制规则
+  # ===== VMware 虚拟化告警接收器 =====
+  - name: 'vmware-alerts'
+    email_configs:
+      - to: 'vmware-team@example.com'
+        headers:
+          Subject: '☁️【VMware】{{ .GroupLabels.alertname }}'
+        send_resolved: true
+
+  # ===== 网络设备告警接收器 =====
+  - name: 'network-alerts'
+    email_configs:
+      - to: 'network-team@example.com'
+        headers:
+          Subject: '🌐【网络】{{ .GroupLabels.alertname }}'
+        send_resolved: true
+
+  # ===== 安全告警接收器 =====
+  - name: 'security-alerts'
+    email_configs:
+      - to: 'security-team@example.com'
+        headers:
+          Subject: '🔒【安全】{{ .GroupLabels.alertname }}'
+        send_resolved: true
+
+# ===== 告警抑制规则（防止告警风暴）=====
 inhibit_rules:
-  # 如果主机宕机,抑制该主机的其他所有告警
+  # ===== 主机级别抑制 =====
+
+  # 规则 1: 主机宕机时，抑制该主机的所有其他告警
+  # 原因: 主机都宕机了，其他 CPU、内存、磁盘告警没有意义
   - source_match:
       alertname: 'HostDown'
     target_match_re:
-      alertname: '.*'
+      alertname: '(HighCPU.*|HighMemory.*|HighDisk.*|HighSystemLoad.*|NetworkInterfaceDown)'
     equal: ['instance']
 
-  # 如果是严重告警,抑制同一告警的警告级别
+  # ===== ESXi 主机级别抑制 =====
+
+  # 规则 2: ESXi 主机宕机时，抑制该主机上所有 VM 的告警
+  # 原因: ESXi 宕机会导致所有 VM 宕机，避免告警轰炸
+  - source_match_re:
+      alertname: 'ESXiHigh.*Critical|HostDown'
+      device_type: 'esxi'
+    target_match:
+      alertname: 'VMDown'
+    equal: ['esxhostname']
+
+  # 规则 3: ESXi 主机宕机时，抑制该主机的其他性能告警
+  - source_match:
+      alertname: 'HostDown'
+      device_type: 'esxi'
+    target_match_re:
+      alertname: '(ESXiHigh.*|DatastoreLowSpace.*)'
+    equal: ['instance']
+
+  # ===== 数据存储级别抑制 =====
+
+  # 规则 4: 数据存储空间严重不足时，抑制该存储上 VM 的磁盘告警
+  - source_match:
+      alertname: 'DatastoreLowSpaceCritical'
+    target_match_re:
+      alertname: '(VMHighMemory.*|VMHighCPU.*)'
+    equal: ['dsname']
+
+  # ===== 网络设备级别抑制 =====
+
+  # 规则 5: 网络设备 Ping 不通时，抑制该设备的接口告警
+  - source_match:
+      alertname: 'HostDown'
+      category: 'network'
+    target_match_re:
+      alertname: '(InterfaceDown|HighInterfaceErrors|HighInterfaceTraffic)'
+    equal: ['instance']
+
+  # 规则 6: SNMP 设备不可达时，抑制该设备的所有 SNMP 告警
+  - source_match:
+      alertname: 'SNMPDeviceDown'
+    target_match_re:
+      alertname: '(InterfaceDown|HighInterfaceErrors|HighInterfaceTraffic)'
+    equal: ['instance']
+
+  # ===== 网站/服务级别抑制 =====
+
+  # 规则 7: 网站宕机时，抑制该网站的慢响应告警
+  - source_match:
+      alertname: 'WebsiteDown'
+    target_match_re:
+      alertname: '(WebsiteSlow.*|WebsiteHTTPStatusCode)'
+    equal: ['instance']
+
+  # ===== 监控系统级别抑制 =====
+
+  # 规则 8: VictoriaMetrics 宕机时，抑制所有其他监控告警
+  # 原因: 没有数据库，所有监控都会失效
+  - source_match:
+      alertname: 'VictoriaMetricsDown'
+    target_match_re:
+      alertname: '.*'
+    equal: []  # 抑制所有告警
+
+  # 规则 9: vmagent 宕机时，抑制采集目标宕机告警
+  # 原因: vmagent 宕机会导致所有采集目标显示为宕机
+  - source_match:
+      alertname: 'VMAgentDown'
+    target_match:
+      alertname: 'TargetDown'
+    equal: []
+
+  # ===== 优先级级别抑制 =====
+
+  # 规则 10: Critical 告警抑制同一告警的 Warning 级别
+  # 原因: CPU 95% Critical 已经触发，不需要再发送 CPU 85% Warning
   - source_match:
       severity: 'critical'
     target_match:
       severity: 'warning'
     equal: ['alertname', 'instance']
 
-  # 如果 VMware Exporter 宕机,抑制所有 VMware 相关告警
+  # 规则 11: P0 抑制同一告警的 P1/P2
   - source_match:
-      alertname: 'VMwareExporterDown'
+      priority: 'P0'
     target_match_re:
-      alertname: '(VMDown|ESXiHigh.*|VMHigh.*|DatastoreLowSpace)'
-    equal: ['cluster']
+      priority: '(P1|P2|P3)'
+    equal: ['alertname', 'instance']
 
-  # 如果 SNMP Exporter 无法访问设备,抑制该设备的其他告警
-  - source_match:
-      alertname: 'SNMPExporterDown'
-    target_match_re:
-      alertname: '(InterfaceDown|HighInterfaceErrors|HighInterfaceTraffic)'
-    equal: ['instance']
+# ===================================================================
+# 配置说明:
+#
+# 1. 告警路由策略:
+#    - 按优先级路由（P0/P1/P2/P3）
+#    - 按类别路由（VMware、Network、Security）
+#    - 按团队路由（不同团队接收不同告警）
+#
+# 2. 告警分组策略:
+#    - 相同 alertname + instance + priority 合并为一条通知
+#    - 目的: 避免短时间内收到大量相同告警
+#
+# 3. 告警抑制策略:
+#    - 主机宕机 → 抑制该主机所有其他告警
+#    - ESXi 宕机 → 抑制所有 VM 告警
+#    - 设备不可达 → 抑制设备接口告警
+#    - Critical → 抑制 Warning
+#
+# 4. 通知策略:
+#    - P0: 10 秒等待，5 分钟重复（紧急）
+#    - P1: 30 秒等待，15 分钟重复
+#    - P2: 1 分钟等待，1 小时重复
+#    - P3: 5 分钟等待，24 小时重复
+#
+# 5. 告警恢复:
+#    - 所有接收器都配置 send_resolved: true
+#    - 告警恢复后会发送恢复通知
+#
+# 6. 集成第三方通知:
+#    - 企业微信: https://work.weixin.qq.com/api/doc/90000/90136/91770
+#    - 钉钉: https://open.dingtalk.com/document/robots/custom-robot-access
+#    - Slack: https://api.slack.com/messaging/webhooks
+#
+# 更多文档: docs/ALERTMANAGER-GUIDE.md
+# ===================================================================

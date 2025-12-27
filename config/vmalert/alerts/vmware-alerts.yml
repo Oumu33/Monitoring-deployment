@@ -1,95 +1,318 @@
+# ===================================================================
+# VMware/vSphere 告警规则
+# 用途: 监控 VMware 虚拟化环境（ESXi、虚拟机、数据存储）
+# 数据来源: Telegraf VMware 插件
+# ===================================================================
+
 groups:
   - name: vmware-telegraf-alerts
     interval: 60s
     rules:
+
+      # ===== 虚拟机告警 =====
+
       # 虚拟机宕机告警
       - alert: VMDown
         expr: vsphere_vm_power_state == 0
         for: 2m
         labels:
           severity: critical
-          category: vmware
+          priority: P1
+          category: availability
+          component: vm
         annotations:
-          summary: "虚拟机 {{ $labels.vmname }} 已关机"
-          description: "虚拟机 {{ $labels.vmname }} 在 ESXi 主机 {{ $labels.esxhostname }} 上处于关机状态"
+          summary: "🔴 虚拟机 {{ $labels.vmname }} 已关机"
+          description: |
+            **虚拟机**: {{ $labels.vmname }}
+            **ESXi 主机**: {{ $labels.esxhostname }}
+            **集群**: {{ $labels.clustername }}
 
-      # ESXi 主机 CPU 使用率过高
-      - alert: ESXiHighCPU
-        expr: vsphere_host_cpu_usage_average > 90
+            **可能原因**:
+            - 手动关机
+            - 电源故障
+            - VM 自动关机（脚本）
+            - ESXi 主机故障导致
+
+            **处理步骤**:
+            1. 登录 vCenter 检查 VM 状态
+            2. 查看 VM 事件日志
+            3. 确认是否计划内关机
+            4. 如非计划内，启动 VM: vCenter → Power On
+          runbook_url: "https://your-wiki.com/runbooks/vm-down"
+
+      # 虚拟机 CPU 使用率告警 - Warning
+      - alert: VMHighCPUWarning
+        expr: vsphere_vm_cpu_usage_average > 80
         for: 10m
         labels:
           severity: warning
-          category: vmware
+          priority: P2
+          category: performance
+          component: vm
         annotations:
-          summary: "ESXi 主机 {{ $labels.esxhostname }} CPU 使用率过高"
-          description: "ESXi 主机 {{ $labels.esxhostname }} CPU 使用率为 {{ $value | humanize }}%"
+          summary: "⚠️ 虚拟机 {{ $labels.vmname }} CPU 使用率较高"
+          description: |
+            **虚拟机**: {{ $labels.vmname }}
+            **CPU 使用率**: {{ $value }}%
+            **vCPU 数量**: {{ $labels.num_cpu }}
 
-      # ESXi 主机内存使用率过高
-      - alert: ESXiHighMemory
-        expr: vsphere_host_mem_usage_average > 90
+            **处理步骤**:
+            1. 登录 VM 检查进程占用
+            2. 考虑增加 vCPU 数量
+            3. 优化应用程序
+          runbook_url: "https://your-wiki.com/runbooks/vm-high-cpu"
+
+      # 虚拟机 CPU 使用率告警 - Critical
+      - alert: VMHighCPUCritical
+        expr: vsphere_vm_cpu_usage_average > 95
+        for: 5m
+        labels:
+          severity: critical
+          priority: P1
+          category: performance
+          component: vm
+        annotations:
+          summary: "🔴 虚拟机 {{ $labels.vmname }} CPU 使用率过高"
+          description: |
+            **紧急**: CPU 使用率达到 {{ $value }}%
+            **影响**: 业务可能受影响
+
+            **立即行动**:
+            1. 登录虚拟机检查进程
+            2. 紧急增加 vCPU（需重启 VM）
+            3. 联系应用负责人排查
+          runbook_url: "https://your-wiki.com/runbooks/vm-high-cpu"
+
+      # 虚拟机内存使用率告警 - Warning
+      - alert: VMHighMemoryWarning
+        expr: vsphere_vm_mem_usage_average > 80
         for: 10m
         labels:
           severity: warning
-          category: vmware
+          priority: P2
+          category: performance
+          component: vm
         annotations:
-          summary: "ESXi 主机 {{ $labels.esxhostname }} 内存使用率过高"
-          description: "ESXi 主机 {{ $labels.esxhostname }} 内存使用率为 {{ $value | humanize }}%"
+          summary: "⚠️ 虚拟机 {{ $labels.vmname }} 内存使用率较高"
+          description: |
+            **虚拟机**: {{ $labels.vmname }}
+            **内存使用率**: {{ $value }}%
+            **配置内存**: {{ $labels.mem_size_mb }} MB
 
-      # 虚拟机 CPU 使用率过高
-      - alert: VMHighCPU
-        expr: vsphere_vm_cpu_usage_average > 85
+            **处理步骤**:
+            1. 检查虚拟机内存使用情况
+            2. 考虑增加内存配置
+            3. 检查是否有内存泄漏
+          runbook_url: "https://your-wiki.com/runbooks/vm-high-memory"
+
+      # 虚拟机内存使用率告警 - Critical
+      - alert: VMHighMemoryCritical
+        expr: vsphere_vm_mem_usage_average > 95
+        for: 5m
+        labels:
+          severity: critical
+          priority: P1
+          category: performance
+          component: vm
+        annotations:
+          summary: "🔴 虚拟机 {{ $labels.vmname }} 内存即将耗尽"
+          description: |
+            **紧急**: 内存使用率达到 {{ $value }}%
+            **风险**: 可能触发 OOM，导致进程崩溃
+
+            **立即行动**:
+            1. 登录虚拟机检查内存
+            2. 紧急增加内存（需重启 VM）
+            3. 重启占用内存过多的服务
+          runbook_url: "https://your-wiki.com/runbooks/vm-high-memory"
+
+      # ===== ESXi 主机告警 =====
+
+      # ESXi 主机 CPU 使用率告警 - Warning
+      - alert: ESXiHighCPUWarning
+        expr: vsphere_host_cpu_usage_average > 80
         for: 10m
         labels:
           severity: warning
-          category: vmware
+          priority: P1
+          category: performance
+          component: esxi
         annotations:
-          summary: "虚拟机 {{ $labels.vmname }} CPU 使用率过高"
-          description: "虚拟机 {{ $labels.vmname }} CPU 使用率为 {{ $value | humanize }}%"
+          summary: "⚠️ ESXi 主机 {{ $labels.esxhostname }} CPU 使用率较高"
+          description: |
+            **ESXi 主机**: {{ $labels.esxhostname }}
+            **CPU 使用率**: {{ $value }}%
+            **集群**: {{ $labels.clustername }}
 
-      # 虚拟机内存使用率过高
-      - alert: VMHighMemory
-        expr: vsphere_vm_mem_usage_average > 85
+            **影响范围**: 该主机上所有虚拟机性能可能下降
+
+            **处理步骤**:
+            1. 检查主机上 VM 数量和资源分配
+            2. 考虑迁移部分 VM 到其他主机
+            3. 使用 DRS 自动平衡负载
+          runbook_url: "https://your-wiki.com/runbooks/esxi-high-cpu"
+
+      # ESXi 主机 CPU 使用率告警 - Critical
+      - alert: ESXiHighCPUCritical
+        expr: vsphere_host_cpu_usage_average > 95
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: performance
+          component: esxi
+        annotations:
+          summary: "🔴 ESXi 主机 {{ $labels.esxhostname }} CPU 严重过载"
+          description: |
+            **紧急**: CPU 使用率达到 {{ $value }}%
+            **影响**: 所有虚拟机性能严重下降
+
+            **立即行动**:
+            1. 立即 vMotion 迁移部分 VM
+            2. 识别占用 CPU 最多的 VM
+            3. 考虑关闭非关键 VM
+          runbook_url: "https://your-wiki.com/runbooks/esxi-high-cpu"
+
+      # ESXi 主机内存使用率告警 - Warning
+      - alert: ESXiHighMemoryWarning
+        expr: vsphere_host_mem_usage_average > 80
         for: 10m
         labels:
           severity: warning
-          category: vmware
+          priority: P1
+          category: performance
+          component: esxi
         annotations:
-          summary: "虚拟机 {{ $labels.vmname }} 内存使用率过高"
-          description: "虚拟机 {{ $labels.vmname }} 内存使用率为 {{ $value | humanize }}%"
+          summary: "⚠️ ESXi 主机 {{ $labels.esxhostname }} 内存使用率较高"
+          description: |
+            **ESXi 主机**: {{ $labels.esxhostname }}
+            **内存使用率**: {{ $value }}%
 
-      # 数据存储空间不足
-      - alert: DatastoreLowSpace
-        expr: (vsphere_datastore_disk_used_latest / vsphere_datastore_disk_capacity_latest) * 100 > 85
+            **影响**: 可能触发内存回收（Memory Ballooning）
+
+            **处理步骤**:
+            1. 检查内存分配情况
+            2. 迁移部分 VM 到其他主机
+            3. 检查是否有内存预留过度
+          runbook_url: "https://your-wiki.com/runbooks/esxi-high-memory"
+
+      # ESXi 主机内存使用率告警 - Critical
+      - alert: ESXiHighMemoryCritical
+        expr: vsphere_host_mem_usage_average > 95
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: performance
+          component: esxi
+        annotations:
+          summary: "🔴 ESXi 主机 {{ $labels.esxhostname }} 内存严重不足"
+          description: |
+            **紧急**: 内存使用率达到 {{ $value }}%
+            **风险**: VM 性能严重下降，可能触发 Swapping
+
+            **立即行动**:
+            1. 立即 vMotion 迁移 VM
+            2. 关闭非关键 VM
+            3. 检查是否有异常内存占用
+          runbook_url: "https://your-wiki.com/runbooks/esxi-high-memory"
+
+      # ===== 数据存储告警 =====
+
+      # 数据存储空间不足 - Warning
+      - alert: DatastoreLowSpaceWarning
+        expr: (vsphere_datastore_disk_used_latest / vsphere_datastore_disk_capacity_latest) * 100 > 80
         for: 10m
         labels:
           severity: warning
-          category: vmware
+          priority: P2
+          category: storage
+          component: datastore
         annotations:
-          summary: "数据存储 {{ $labels.dsname }} 空间不足"
-          description: "数据存储 {{ $labels.dsname }} 已使用 {{ $value | humanize }}%"
+          summary: "⚠️ 数据存储 {{ $labels.dsname }} 空间不足"
+          description: |
+            **数据存储**: {{ $labels.dsname }}
+            **已使用**: {{ $value | humanizePercentage }}
+            **总容量**: {{ $labels.capacity }} GB
 
-  - name: snmp-alerts
-    interval: 30s
-    rules:
-      # SNMP Exporter 服务宕机
-      - alert: SNMPExporterDown
+            **影响**: 可能无法创建新虚拟机或快照
+
+            **处理步骤**:
+            1. 检查是否有不需要的快照
+            2. 清理旧的虚拟机
+            3. 扩容数据存储
+            4. 迁移部分 VM 到其他数据存储
+          runbook_url: "https://your-wiki.com/runbooks/datastore-low-space"
+
+      # 数据存储空间不足 - Critical
+      - alert: DatastoreLowSpaceCritical
+        expr: (vsphere_datastore_disk_used_latest / vsphere_datastore_disk_capacity_latest) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: storage
+          component: datastore
+        annotations:
+          summary: "🔴 数据存储 {{ $labels.dsname }} 空间严重不足"
+          description: |
+            **紧急**: 已使用 {{ $value | humanizePercentage }}
+            **风险**: VM 可能无法写入，业务中断
+
+            **立即行动**:
+            1. 立即删除快照
+            2. 清理日志文件
+            3. 紧急扩容或迁移 VM
+          runbook_url: "https://your-wiki.com/runbooks/datastore-low-space"
+
+      # ===== SNMP 网络设备告警 =====
+
+      # SNMP 设备不可达
+      - alert: SNMPDeviceDown
         expr: up{job="snmp-exporter"} == 0
         for: 2m
         labels:
           severity: critical
+          priority: P0
+          category: availability
+          component: network
         annotations:
-          summary: "SNMP 设备 {{ $labels.instance }} 无法访问"
-          description: "SNMP 设备 {{ $labels.instance }} 已经无法访问超过 2 分钟"
+          summary: "🔴 SNMP 设备 {{ $labels.instance }} 无法访问"
+          description: |
+            **设备**: {{ $labels.instance }}
+            **设备类型**: {{ $labels.device_type }}
 
-      # 网络设备接口下线
+            **可能原因**:
+            - 设备宕机
+            - 网络不可达
+            - SNMP 配置错误
+
+            **处理步骤**:
+            1. Ping 设备: `ping {{ $labels.instance }}`
+            2. 检查设备电源和网线
+            3. 登录设备控制台检查
+          runbook_url: "https://your-wiki.com/runbooks/snmp-device-down"
+
+      # 网络接口下线
       - alert: InterfaceDown
         expr: ifOperStatus == 2
         for: 2m
         labels:
           severity: warning
+          priority: P2
+          category: network
+          component: interface
         annotations:
-          summary: "网络接口 {{ $labels.ifDescr }} 下线"
-          description: "设备 {{ $labels.instance }} 的接口 {{ $labels.ifDescr }} 已下线"
+          summary: "⚠️ 网络接口 {{ $labels.ifDescr }} 下线"
+          description: |
+            **设备**: {{ $labels.instance }}
+            **接口**: {{ $labels.ifDescr }}
+
+            **处理步骤**:
+            1. 检查接口配置
+            2. 检查物理连接
+            3. 查看设备日志
+          runbook_url: "https://your-wiki.com/runbooks/interface-down"
 
       # 网络接口错误率过高
       - alert: HighInterfaceErrors
@@ -97,16 +320,65 @@ groups:
         for: 5m
         labels:
           severity: warning
+          priority: P2
+          category: network
+          component: interface
         annotations:
-          summary: "接口 {{ $labels.ifDescr }} 错误率过高"
-          description: "设备 {{ $labels.instance }} 接口 {{ $labels.ifDescr }} 每秒错误包数为 {{ $value | humanize }}"
+          summary: "⚠️ 接口 {{ $labels.ifDescr }} 错误率过高"
+          description: |
+            **设备**: {{ $labels.instance }}
+            **接口**: {{ $labels.ifDescr }}
+            **错误率**: {{ $value | humanize }} 包/秒
+
+            **可能原因**:
+            - 物理连接问题
+            - 网线故障
+            - 光模块故障
+            - 速率/双工模式不匹配
+
+            **处理步骤**:
+            1. 检查接口状态
+            2. 更换网线或光模块
+            3. 检查速率和双工配置
+          runbook_url: "https://your-wiki.com/runbooks/interface-errors"
 
       # 网络接口流量过高
       - alert: HighInterfaceTraffic
-        expr: (rate(ifHCInOctets[5m]) * 8 / ifHighSpeed / 1000000) * 100 > 80 or (rate(ifHCOutOctets[5m]) * 8 / ifHighSpeed / 1000000) * 100 > 80
+        expr: (rate(ifHCInOctets[5m]) * 8 / ifHighSpeed / 1000000) * 100 > 80
         for: 5m
         labels:
           severity: warning
+          priority: P2
+          category: network
+          component: interface
         annotations:
-          summary: "接口 {{ $labels.ifDescr }} 流量过高"
-          description: "设备 {{ $labels.instance }} 接口 {{ $labels.ifDescr }} 流量使用率为 {{ $value | humanize }}%"
+          summary: "⚠️ 接口 {{ $labels.ifDescr }} 流量过高"
+          description: |
+            **设备**: {{ $labels.instance }}
+            **接口**: {{ $labels.ifDescr }}
+            **流量使用率**: {{ $value | humanizePercentage }}
+
+            **处理步骤**:
+            1. 分析流量来源
+            2. 考虑升级带宽
+            3. 启用 QoS 流量控制
+          runbook_url: "https://your-wiki.com/runbooks/high-traffic"
+
+# ===================================================================
+# 告警规则说明:
+#
+# 1. VMware 告警优先级:
+#    - ESXi 主机: P0/P1（影响所有 VM）
+#    - 虚拟机: P1/P2（影响单个业务）
+#    - 数据存储: P0/P2（影响多个 VM）
+#
+# 2. 告警抑制建议:
+#    - ESXi 主机宕机时，抑制该主机上所有 VM 的告警
+#    - 数据存储故障时，抑制该存储上所有 VM 的告警
+#
+# 3. 指标来源:
+#    - vsphere_* 指标来自 Telegraf VMware 插件
+#    - 直接推送到 VictoriaMetrics，不经过 vmagent
+#
+# 更多文档: docs/VMWARE-MONITORING-GUIDE.md
+# ===================================================================
