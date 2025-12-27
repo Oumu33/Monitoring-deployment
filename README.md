@@ -1,36 +1,52 @@
 # 监控系统部署方案
 
-基于 VictoriaMetrics 的完整监控系统,包含 Linux 主机监控、VMware 虚拟化监控、SNMP 网络设备监控。
+基于 VictoriaMetrics 的企业级监控系统，涵盖基础设施、虚拟化、网络设备和服务可用性全方位监控。
 
 ## 系统架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      监控数据流                               │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  Node Exporter ──┐                                           │
-│  VMware Exporter ┼──> vmagent ──> VictoriaMetrics           │
-│  SNMP Exporter ──┘         │             │                   │
-│                            │             │                   │
-│                            v             v                   │
-│                       vmalert ──> Alertmanager               │
-│                            │                                 │
-│                            v                                 │
-│                        Grafana                               │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         监控数据流                                 │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  Node Exporter ────┐                                              │
+│  SNMP Exporter ────┼──> vmagent ──┐                              │
+│  Blackbox Exporter ┘               │                              │
+│                                    v                              │
+│  Telegraf (VMware) ───────> VictoriaMetrics                      │
+│                                    │                              │
+│                                    v                              │
+│                               vmalert ──> Alertmanager            │
+│                                    │                              │
+│                                    v                              │
+│                                 Grafana                           │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## 组件说明
 
-- **VictoriaMetrics**: 时序数据库,存储所有监控指标
-- **vmagent**: 指标采集代理,负责从各个 exporter 收集数据
-- **vmalert**: 告警规则引擎,评估告警规则并触发告警
+### 核心组件
+- **VictoriaMetrics**: 高性能时序数据库，存储所有监控指标
+- **vmagent**: 指标采集代理，负责从各个 exporter 收集数据
+- **vmalert**: 告警规则引擎，评估告警规则并触发告警
 - **Alertmanager**: 告警管理和通知分发
 - **Grafana**: 数据可视化平台
-- **Node Exporter**: Linux 主机指标采集
-- **VMware Exporter**: VMware vSphere 环境监控
-- **SNMP Exporter**: SNMP 网络设备监控
+
+### 数据采集组件
+- **Node Exporter**: Linux 主机指标采集（CPU、内存、磁盘、网络）
+- **Telegraf**: VMware vSphere 环境监控（单实例支持多 vCenter）
+- **SNMP Exporter**: 网络设备监控（交换机、路由器）
+- **Blackbox Exporter**: 服务可用性探测（HTTP、ICMP、TCP、DNS）
+
+## 监控覆盖
+
+| 监控类型 | 覆盖内容 | 采集组件 |
+|---------|---------|---------|
+| 🖥️ 主机监控 | CPU、内存、磁盘、网络、进程 | Node Exporter |
+| ☁️ 虚拟化监控 | VM、ESXi、数据存储、集群 | Telegraf |
+| 🌐 网络监控 | 交换机、路由器、端口、流量 | SNMP Exporter |
+| 🔍 服务监控 | 网站可用性、API健康、SSL证书 | Blackbox Exporter |
+| 📡 连通性监控 | Ping、端口探测、响应时间 | Blackbox Exporter |
 
 ## 前置要求
 
@@ -101,12 +117,27 @@ cd ../..
       labels:
         instance: 'web-server-01'
 
-# 添加 SNMP 设备
+# 添加 SNMP 设备（交换机、路由器）
 - job_name: 'snmp-exporter'
   static_configs:
     - targets:
       - 192.168.1.100  # 交换机 IP
       - 192.168.1.101  # 路由器 IP
+
+# 添加服务可用性探测（Blackbox）
+# HTTP/HTTPS 网站监控
+- job_name: 'blackbox-http'
+  static_configs:
+    - targets:
+      - https://www.company.com
+      - http://internal-app.local
+
+# ICMP Ping 探测
+- job_name: 'blackbox-icmp'
+  static_configs:
+    - targets:
+      - 192.168.1.100  # 交换机
+      - 192.168.1.1    # 网关
 ```
 
 ### 6. 配置告警通知
@@ -143,6 +174,7 @@ docker-compose ps
 - **Alertmanager**: http://localhost:9093
 - **Node Exporter**: http://localhost:9100/metrics
 - **SNMP Exporter**: http://localhost:9116/metrics
+- **Blackbox Exporter**: http://localhost:9115/metrics
 
 ## 监控目标配置
 
@@ -201,6 +233,53 @@ docker run -d \
 3. 根据设备类型选择合适的 SNMP 模块
 
 详细配置请参考: [config/snmp-exporter/README.md](config/snmp-exporter/README.md)
+
+### Blackbox 服务可用性监控
+
+Blackbox Exporter 用于监控服务可用性和网络连通性。
+
+**支持的探测类型**:
+- **HTTP/HTTPS**: 网站可用性、API 健康检查
+- **ICMP**: Ping 探测，检测设备是否在线
+- **TCP**: 端口连通性检测（数据库、SSH 等）
+- **DNS**: DNS 解析监控
+
+**配置示例**:
+
+```yaml
+# 1. HTTP/HTTPS 网站监控
+- job_name: 'blackbox-http'
+  static_configs:
+    - targets:
+      - https://www.company.com    # 监控公司网站
+      - http://oa.company.local    # 监控内部应用
+
+# 2. ICMP Ping 探测
+- job_name: 'blackbox-icmp'
+  static_configs:
+    - targets:
+      - 192.168.1.100  # 交换机
+      - 192.168.1.1    # 网关
+      - 192.168.2.10   # ESXi 主机
+
+# 3. TCP 端口探测
+- job_name: 'blackbox-tcp'
+  static_configs:
+    - targets:
+      - 192.168.3.10:3306   # MySQL
+      - 192.168.4.10:22     # SSH
+      - vcenter.local:443   # vCenter
+```
+
+**监控能力**:
+- ✅ 网站是否可访问
+- ✅ 响应时间监控
+- ✅ SSL 证书过期检测
+- ✅ 设备 Ping 连通性
+- ✅ 网络延迟和丢包率
+- ✅ 服务端口可用性
+
+详细配置请参考: [examples/blackbox-monitoring-examples.yml](examples/blackbox-monitoring-examples.yml)
 
 ## Grafana 仪表板
 
