@@ -158,6 +158,12 @@ docker run -d \
 2. 在 `.env` 文件中配置 vCenter 连接信息
 3. VMware Exporter 会自动发现并监控所有 ESXi 主机和虚拟机
 
+**多 vCenter 监控**:
+- **方案 1**: 部署多个 vmware-exporter 容器 (适合 1-2 个 vCenter)
+- **方案 2**: 使用 Telegraf 单实例 (推荐,适合 3+ 个 vCenter,资源节省 70%)
+
+详细对比和选择指南: [VMware 多集群监控方案对比](docs/VMWARE-SOLUTION-COMPARISON.md)
+
 ### SNMP 设备监控
 
 1. 确保网络设备开启 SNMP(v2c 或 v3)
@@ -391,6 +397,7 @@ cadvisor:
 
 ## 参考文档
 
+### 官方文档
 - [VictoriaMetrics 官方文档](https://docs.victoriametrics.com/)
 - [vmagent 文档](https://docs.victoriametrics.com/vmagent.html)
 - [vmalert 文档](https://docs.victoriametrics.com/vmalert.html)
@@ -399,6 +406,15 @@ cadvisor:
 - [Node Exporter 文档](https://github.com/prometheus/node_exporter)
 - [SNMP Exporter 文档](https://github.com/prometheus/snmp_exporter)
 - [VMware Exporter 文档](https://github.com/pryorda/vmware_exporter)
+
+### 本项目文档
+- [VMware 多集群监控方案对比](docs/VMWARE-SOLUTION-COMPARISON.md) - 选择最适合的 VMware 监控方案
+- [Telegraf 多 vCenter 监控指南](docs/TELEGRAF-VMWARE.md) - 单实例监控多个 vCenter
+- [多 VMware 实例部署](docs/VMWARE-MULTI-INSTANCE.md) - vmware-exporter 多容器部署
+- [多 VMware 集群配置](docs/MULTI-VMWARE.md) - 多数据中心和多租户场景
+- [交换机监控配置](docs/SWITCH-MONITORING.md) - SNMP 交换机监控详细指南
+- [性能调优指南](docs/PERFORMANCE-TUNING.md) - 系统性能优化
+- [常见问题 FAQ](docs/FAQ.md) - 常见问题解答
 
 ## 许可证
 
