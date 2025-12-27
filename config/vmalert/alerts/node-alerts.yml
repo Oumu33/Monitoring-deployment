@@ -1,0 +1,73 @@
+groups:
+  - name: node-exporter-alerts
+    interval: 30s
+    rules:
+      # 主机宕机告警
+      - alert: HostDown
+        expr: up{job="node-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "主机 {{ $labels.instance }} 宕机"
+          description: "主机 {{ $labels.instance }} 已经宕机超过 1 分钟"
+
+      # CPU 使用率告警
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机 {{ $labels.instance }} CPU 使用率过高"
+          description: "主机 {{ $labels.instance }} CPU 使用率为 {{ $value | humanize }}%"
+
+      # 内存使用率告警
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机 {{ $labels.instance }} 内存使用率过高"
+          description: "主机 {{ $labels.instance }} 内存使用率为 {{ $value | humanize }}%"
+
+      # 磁盘使用率告警
+      - alert: HighDiskUsage
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机 {{ $labels.instance }} 磁盘空间不足"
+          description: "主机 {{ $labels.instance }} 挂载点 {{ $labels.mountpoint }} 剩余空间为 {{ $value | humanize }}%"
+
+      # 磁盘 I/O 等待时间告警
+      - alert: HighDiskIOWait
+        expr: rate(node_cpu_seconds_total{mode="iowait"}[5m]) * 100 > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机 {{ $labels.instance }} 磁盘 I/O 等待时间过高"
+          description: "主机 {{ $labels.instance }} I/O 等待时间为 {{ $value | humanize }}%"
+
+      # 网络接口状态告警
+      - alert: NetworkInterfaceDown
+        expr: node_network_up == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机 {{ $labels.instance }} 网络接口 {{ $labels.device }} 下线"
+          description: "主机 {{ $labels.instance }} 的网络接口 {{ $labels.device }} 已下线"
+
+      # 系统负载告警
+      - alert: HighSystemLoad
+        expr: node_load15 / count(node_cpu_seconds_total{mode="idle"}) without(cpu, mode) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机 {{ $labels.instance }} 系统负载过高"
+          description: "主机 {{ $labels.instance }} 15分钟平均负载为 {{ $value | humanize }}"

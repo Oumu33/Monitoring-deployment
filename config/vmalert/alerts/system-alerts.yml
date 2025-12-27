@@ -1,0 +1,93 @@
+groups:
+  - name: monitoring-system-alerts
+    interval: 30s
+    rules:
+      # VictoriaMetrics 服务宕机
+      - alert: VictoriaMetricsDown
+        expr: up{job="victoriametrics"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "VictoriaMetrics 时序数据库宕机"
+          description: "VictoriaMetrics 服务已经宕机超过 2 分钟,监控系统无法存储指标数据"
+
+      # vmagent 服务宕机
+      - alert: VMAgentDown
+        expr: up{job="vmagent"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vmagent 采集服务宕机"
+          description: "vmagent 服务已经宕机超过 2 分钟,监控数据无法采集"
+
+      # vmalert 服务宕机
+      - alert: VMAlertDown
+        expr: up{job="vmalert"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vmalert 告警服务宕机"
+          description: "vmalert 服务已经宕机超过 2 分钟,告警规则无法评估"
+
+      # Alertmanager 服务宕机
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager 告警管理服务宕机"
+          description: "Alertmanager 服务已经宕机超过 2 分钟,告警通知无法发送"
+
+      # 采集目标宕机
+      - alert: TargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "监控目标 {{ $labels.instance }} 无法访问"
+          description: "监控目标 {{ $labels.instance }} ({{ $labels.job }}) 已经无法访问超过 5 分钟"
+
+      # VictoriaMetrics 存储空间不足
+      - alert: VMStorageLowSpace
+        expr: (vm_free_disk_space_bytes / (vm_free_disk_space_bytes + vm_data_size_bytes)) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "VictoriaMetrics 存储空间不足"
+          description: "VictoriaMetrics 存储剩余空间低于 10%,当前剩余 {{ $value | humanize }}%"
+
+      # vmagent 采集缓冲区满
+      - alert: VMAgentBufferFull
+        expr: increase(vmagent_remotewrite_dropped_rows_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vmagent 丢弃采集数据"
+          description: "vmagent 因缓冲区满而丢弃数据,近 5 分钟丢弃 {{ $value }} 条记录"
+
+      # vmalert 规则评估失败
+      - alert: VMAlertRuleErrors
+        expr: increase(vmalert_alerting_rules_error_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vmalert 告警规则评估失败"
+          description: "vmalert 在近 5 分钟内有 {{ $value }} 次规则评估失败"
+
+      # Alertmanager 通知发送失败
+      - alert: AlertmanagerNotificationsFailed
+        expr: increase(alertmanager_notifications_failed_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alertmanager 告警通知发送失败"
+          description: "Alertmanager 在近 5 分钟内有 {{ $value }} 次通知发送失败"

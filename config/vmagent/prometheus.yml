@@ -1,0 +1,79 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'monitoring-cluster'
+    environment: 'production'
+
+scrape_configs:
+  # VictoriaMetrics 自监控
+  - job_name: 'victoriametrics'
+    static_configs:
+      - targets: ['victoriametrics:8428']
+        labels:
+          service: 'victoriametrics'
+
+  # vmagent 自监控
+  - job_name: 'vmagent'
+    static_configs:
+      - targets: ['vmagent:8429']
+        labels:
+          service: 'vmagent'
+
+  # vmalert 监控
+  - job_name: 'vmalert'
+    static_configs:
+      - targets: ['vmalert:8880']
+        labels:
+          service: 'vmalert'
+
+  # Alertmanager 监控
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+        labels:
+          service: 'alertmanager'
+
+  # Node Exporter - Linux 主机监控
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          instance: 'monitoring-host'
+      # 添加更多 Linux 主机
+      # - targets: ['192.168.1.10:9100']
+      #   labels:
+      #     instance: 'linux-server-01'
+      # - targets: ['192.168.1.11:9100']
+      #   labels:
+      #     instance: 'linux-server-02'
+
+  # SNMP Exporter - 网络设备监控
+  - job_name: 'snmp-exporter'
+    static_configs:
+      - targets:
+        # 交换机示例
+        - 192.168.1.100  # 请替换为实际的设备 IP
+        # - 192.168.1.101
+        # 路由器示例
+        # - 192.168.1.200
+    metrics_path: /snmp
+    params:
+      module: [if_mib]  # 使用默认的 if_mib 模块
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116
+
+  # VMware Exporter - VMware 虚拟化环境监控
+  - job_name: 'vmware-exporter'
+    static_configs:
+      - targets: ['vmware-exporter:9272']
+        labels:
+          service: 'vmware-exporter'
+    scrape_interval: 60s  # VMware 监控可以使用更长的抓取间隔
+    scrape_timeout: 50s

@@ -1,0 +1,300 @@
+groups:
+  - name: switch-alerts
+    interval: 30s
+    rules:
+      # 交换机设备宕机
+      - alert: SwitchDown
+        expr: up{job="snmp-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} 无法访问"
+          description: "交换机 {{ $labels.instance }} 已经无法通过 SNMP 访问超过 2 分钟"
+
+      # 交换机 CPU 使用率过高
+      - alert: SwitchHighCPU
+        expr: hrProcessorLoad > 80
+        for: 10m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} CPU 使用率过高"
+          description: "交换机 {{ $labels.instance }} CPU 使用率为 {{ $value }}%，持续 10 分钟"
+
+      # 交换机 CPU 使用率严重过高
+      - alert: SwitchCriticalCPU
+        expr: hrProcessorLoad > 95
+        for: 5m
+        labels:
+          severity: critical
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} CPU 使用率严重过高"
+          description: "交换机 {{ $labels.instance }} CPU 使用率为 {{ $value }}%，已达到严重级别"
+
+      # 交换机内存使用率过高
+      - alert: SwitchHighMemory
+        expr: (hrStorageUsed / hrStorageSize) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} 内存使用率过高"
+          description: "交换机 {{ $labels.instance }} 内存 {{ $labels.hrStorageDescr }} 使用率为 {{ $value | humanize }}%"
+
+      # 交换机温度过高
+      - alert: SwitchHighTemperature
+        expr: ciscoEnvMonTemperatureStatusValue > 60
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} 温度过高"
+          description: "交换机 {{ $labels.instance }} 传感器 {{ $labels.ciscoEnvMonTemperatureStatusDescr }} 温度为 {{ $value }}°C"
+
+      # 交换机温度严重过高
+      - alert: SwitchCriticalTemperature
+        expr: ciscoEnvMonTemperatureStatusValue > 70
+        for: 2m
+        labels:
+          severity: critical
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} 温度严重过高"
+          description: "交换机 {{ $labels.instance }} 传感器 {{ $labels.ciscoEnvMonTemperatureStatusDescr }} 温度为 {{ $value }}°C，可能影响设备稳定性"
+
+      # 交换机风扇故障
+      - alert: SwitchFanFailure
+        expr: ciscoEnvMonFanState != 1
+        for: 1m
+        labels:
+          severity: critical
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} 风扇故障"
+          description: "交换机 {{ $labels.instance }} 风扇 {{ $labels.ciscoEnvMonFanStatusDescr }} 状态异常（非正常运行状态）"
+
+      # 交换机电源故障
+      - alert: SwitchPowerSupplyFailure
+        expr: ciscoEnvMonSupplyState != 1
+        for: 1m
+        labels:
+          severity: critical
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} 电源故障"
+          description: "交换机 {{ $labels.instance }} 电源 {{ $labels.ciscoEnvMonSupplyStatusDescr }} 状态异常"
+
+      # 交换机端口下线（Trunk 口）
+      - alert: SwitchTrunkPortDown
+        expr: ifOperStatus{ifAlias=~".*[Tt]runk.*"} == 2
+        for: 3m
+        labels:
+          severity: critical
+          category: network
+        annotations:
+          summary: "交换机 Trunk 端口 {{ $labels.ifDescr }} 下线"
+          description: "交换机 {{ $labels.instance }} 的 Trunk 端口 {{ $labels.ifDescr }} ({{ $labels.ifAlias }}) 已下线"
+
+      # 交换机端口下线（上联口）
+      - alert: SwitchUplinkPortDown
+        expr: ifOperStatus{ifAlias=~".*[Uu]plink.*"} == 2
+        for: 2m
+        labels:
+          severity: critical
+          category: network
+        annotations:
+          summary: "交换机上联端口 {{ $labels.ifDescr }} 下线"
+          description: "交换机 {{ $labels.instance }} 的上联端口 {{ $labels.ifDescr }} ({{ $labels.ifAlias }}) 已下线"
+
+      # 端口错误率过高（输入错误）
+      - alert: SwitchPortInputErrors
+        expr: rate(ifInErrors[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机端口 {{ $labels.ifDescr }} 输入错误率过高"
+          description: "交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 每秒输入错误包数为 {{ $value | humanize }}"
+
+      # 端口错误率过高（输出错误）
+      - alert: SwitchPortOutputErrors
+        expr: rate(ifOutErrors[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机端口 {{ $labels.ifDescr }} 输出错误率过高"
+          description: "交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 每秒输出错误包数为 {{ $value | humanize }}"
+
+      # 端口丢包率过高（输入丢包）
+      - alert: SwitchPortInputDiscards
+        expr: rate(ifInDiscards[5m]) > 50
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机端口 {{ $labels.ifDescr }} 输入丢包率过高"
+          description: "交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 每秒输入丢包数为 {{ $value | humanize }}"
+
+      # 端口丢包率过高（输出丢包）
+      - alert: SwitchPortOutputDiscards
+        expr: rate(ifOutDiscards[5m]) > 50
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机端口 {{ $labels.ifDescr }} 输出丢包率过高"
+          description: "交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 每秒输出丢包数为 {{ $value | humanize }}"
+
+      # 端口 CRC 错误
+      - alert: SwitchPortCRCErrors
+        expr: rate(dot3StatsFCSErrors[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机端口 {{ $labels.ifDescr }} CRC 错误率过高"
+          description: "交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 每秒 CRC 错误数为 {{ $value | humanize }}"
+
+      # 端口冲突检测（半双工模式下）
+      - alert: SwitchPortCollisions
+        expr: rate(ifCollisions[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机端口 {{ $labels.ifDescr }} 检测到冲突"
+          description: "交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 每秒冲突次数为 {{ $value | humanize }}，建议检查双工模式配置"
+
+      # 端口带宽利用率过高（入向）
+      - alert: SwitchPortHighInboundTraffic
+        expr: (rate(ifHCInOctets[5m]) * 8 / ifHighSpeed / 1000000) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机端口 {{ $labels.ifDescr }} 入向流量过高"
+          description: "交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 入向带宽利用率为 {{ $value | humanize }}%"
+
+      # 端口带宽利用率过高（出向）
+      - alert: SwitchPortHighOutboundTraffic
+        expr: (rate(ifHCOutOctets[5m]) * 8 / ifHighSpeed / 1000000) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机端口 {{ $labels.ifDescr }} 出向流量过高"
+          description: "交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 出向带宽利用率为 {{ $value | humanize }}%"
+
+      # 端口状态频繁变化（抖动）
+      - alert: SwitchPortFlapping
+        expr: changes(ifOperStatus[10m]) > 5
+        for: 1m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机端口 {{ $labels.ifDescr }} 状态频繁变化"
+          description: "交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 在过去 10 分钟内状态变化了 {{ $value }} 次，可能存在线路或设备问题"
+
+      # STP 拓扑变化过于频繁
+      - alert: SwitchFrequentSTPChanges
+        expr: rate(dot1dStpTopChanges[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} STP 拓扑变化频繁"
+          description: "交换机 {{ $labels.instance }} STP 拓扑在过去 10 分钟内发生了多次变化，可能存在网络环路或配置问题"
+
+      # 交换机配置变更
+      - alert: SwitchConfigurationChanged
+        expr: ccmHistoryRunningLastChanged != ccmHistoryRunningLastSaved
+        for: 30m
+        labels:
+          severity: info
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} 配置已变更但未保存"
+          description: "交换机 {{ $labels.instance }} 的运行配置已变更超过 30 分钟，但尚未保存到启动配置"
+
+      # 交换机系统重启
+      - alert: SwitchRebooted
+        expr: sysUpTime < 600
+        for: 1m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} 最近重启过"
+          description: "交换机 {{ $labels.instance }} 运行时间少于 10 分钟，设备可能刚刚重启"
+
+      # MAC 地址表接近满
+      - alert: SwitchMACTableNearFull
+        expr: (dot1dTpLearnedEntryDiscards / dot1dTpLearnedEntryDiscards) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机 {{ $labels.instance }} MAC 地址表接近满"
+          description: "交换机 {{ $labels.instance }} MAC 地址表容量不足，正在丢弃新的 MAC 地址条目"
+
+      # VLAN 接口下线
+      - alert: SwitchVLANInterfaceDown
+        expr: ifOperStatus{ifType="l2vlan"} == 2
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机 VLAN 接口 {{ $labels.ifDescr }} 下线"
+          description: "交换机 {{ $labels.instance }} 的 VLAN 接口 {{ $labels.ifDescr }} 已下线"
+
+      # 端口安全违规
+      - alert: SwitchPortSecurityViolation
+        expr: increase(cpsIfPortSecurityViolations[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机端口 {{ $labels.ifDescr }} 检测到安全违规"
+          description: "交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 在过去 5 分钟内检测到 {{ $value }} 次端口安全违规"
+
+      # PoE 端口功率过载
+      - alert: SwitchPOEPortOverload
+        expr: pethPsePortPower > pethPsePortPowerLimit * 0.95
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "交换机 PoE 端口 {{ $labels.pethPsePortIndex }} 功率接近上限"
+          description: "交换机 {{ $labels.instance }} PoE 端口功率为 {{ $value }}W，接近或超过限制"
+
+      # 堆叠成员离线（针对堆叠交换机）
+      - alert: SwitchStackMemberDown
+        expr: cswSwitchState != 3
+        for: 2m
+        labels:
+          severity: critical
+          category: network
+        annotations:
+          summary: "交换机堆叠成员 {{ $labels.cswSwitchIndex }} 离线"
+          description: "堆叠交换机 {{ $labels.instance }} 的成员 {{ $labels.cswSwitchIndex }} 状态异常"

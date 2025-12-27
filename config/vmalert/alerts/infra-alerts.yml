@@ -1,0 +1,116 @@
+groups:
+  - name: vmware-alerts
+    interval: 60s
+    rules:
+      # VMware Exporter 服务宕机
+      - alert: VMwareExporterDown
+        expr: up{job="vmware-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "VMware Exporter 服务宕机"
+          description: "VMware Exporter 服务已经宕机超过 2 分钟,无法采集 VMware 监控数据"
+
+      # 虚拟机宕机告警
+      - alert: VMDown
+        expr: vmware_vm_power_state == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "虚拟机 {{ $labels.vm_name }} 已关机"
+          description: "虚拟机 {{ $labels.vm_name }} 在 ESXi 主机 {{ $labels.host_name }} 上处于关机状态"
+
+      # ESXi 主机 CPU 使用率过高
+      - alert: ESXiHighCPU
+        expr: vmware_host_cpu_usage > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ESXi 主机 {{ $labels.host_name }} CPU 使用率过高"
+          description: "ESXi 主机 {{ $labels.host_name }} CPU 使用率为 {{ $value | humanize }}%"
+
+      # ESXi 主机内存使用率过高
+      - alert: ESXiHighMemory
+        expr: vmware_host_memory_usage > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ESXi 主机 {{ $labels.host_name }} 内存使用率过高"
+          description: "ESXi 主机 {{ $labels.host_name }} 内存使用率为 {{ $value | humanize }}%"
+
+      # 虚拟机 CPU 使用率过高
+      - alert: VMHighCPU
+        expr: vmware_vm_cpu_usage > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "虚拟机 {{ $labels.vm_name }} CPU 使用率过高"
+          description: "虚拟机 {{ $labels.vm_name }} CPU 使用率为 {{ $value | humanize }}%"
+
+      # 虚拟机内存使用率过高
+      - alert: VMHighMemory
+        expr: vmware_vm_mem_usage > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "虚拟机 {{ $labels.vm_name }} 内存使用率过高"
+          description: "虚拟机 {{ $labels.vm_name }} 内存使用率为 {{ $value | humanize }}%"
+
+      # 数据存储空间不足
+      - alert: DatastoreLowSpace
+        expr: (vmware_datastore_freespace_size / vmware_datastore_capacity_size) * 100 < 15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "数据存储 {{ $labels.ds_name }} 空间不足"
+          description: "数据存储 {{ $labels.ds_name }} 剩余空间为 {{ $value | humanize }}%"
+
+  - name: snmp-alerts
+    interval: 30s
+    rules:
+      # SNMP Exporter 服务宕机
+      - alert: SNMPExporterDown
+        expr: up{job="snmp-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SNMP 设备 {{ $labels.instance }} 无法访问"
+          description: "SNMP 设备 {{ $labels.instance }} 已经无法访问超过 2 分钟"
+
+      # 网络设备接口下线
+      - alert: InterfaceDown
+        expr: ifOperStatus == 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网络接口 {{ $labels.ifDescr }} 下线"
+          description: "设备 {{ $labels.instance }} 的接口 {{ $labels.ifDescr }} 已下线"
+
+      # 网络接口错误率过高
+      - alert: HighInterfaceErrors
+        expr: rate(ifInErrors[5m]) + rate(ifOutErrors[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "接口 {{ $labels.ifDescr }} 错误率过高"
+          description: "设备 {{ $labels.instance }} 接口 {{ $labels.ifDescr }} 每秒错误包数为 {{ $value | humanize }}"
+
+      # 网络接口流量过高
+      - alert: HighInterfaceTraffic
+        expr: (rate(ifHCInOctets[5m]) * 8 / ifHighSpeed / 1000000) * 100 > 80 or (rate(ifHCOutOctets[5m]) * 8 / ifHighSpeed / 1000000) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "接口 {{ $labels.ifDescr }} 流量过高"
+          description: "设备 {{ $labels.instance }} 接口 {{ $labels.ifDescr }} 流量使用率为 {{ $value | humanize }}%"

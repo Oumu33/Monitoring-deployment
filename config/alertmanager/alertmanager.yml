@@ -1,0 +1,136 @@
+global:
+  resolve_timeout: 5m
+  # SMTP 邮件配置(需要根据实际情况配置)
+  smtp_smarthost: 'smtp.example.com:587'
+  smtp_from: 'alertmanager@example.com'
+  smtp_auth_username: 'alertmanager@example.com'
+  smtp_auth_password: 'your-password'
+  smtp_require_tls: true
+
+# 告警路由配置
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s        # 等待同组的其他告警
+  group_interval: 10s    # 发送同组告警的间隔
+  repeat_interval: 12h   # 重复发送告警的间隔
+  receiver: 'default'    # 默认接收器
+
+  routes:
+    # 严重告警立即发送
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 10s
+      repeat_interval: 5m
+
+    # 警告类告警
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      repeat_interval: 30m
+
+    # 监控系统自身告警
+    - match_re:
+        job: (victoriametrics|vmagent|vmalert|alertmanager)
+      receiver: 'monitoring-system-alerts'
+      group_wait: 10s
+      repeat_interval: 10m
+
+# 告警接收器配置
+receivers:
+  # 默认接收器
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook'
+        send_resolved: true
+
+  # 严重告警接收器(邮件 + Webhook)
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'admin@example.com'
+        headers:
+          Subject: '【严重告警】{{ .GroupLabels.alertname }}'
+        html: |
+          {{ range .Alerts }}
+          <h3>告警详情:</h3>
+          <ul>
+            <li>告警名称: {{ .Labels.alertname }}</li>
+            <li>告警级别: {{ .Labels.severity }}</li>
+            <li>实例: {{ .Labels.instance }}</li>
+            <li>摘要: {{ .Annotations.summary }}</li>
+            <li>描述: {{ .Annotations.description }}</li>
+            <li>开始时间: {{ .StartsAt.Format "2006-01-02 15:04:05" }}</li>
+          </ul>
+          {{ end }}
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/critical'
+        send_resolved: true
+
+  # 警告告警接收器(仅邮件)
+  - name: 'warning-alerts'
+    email_configs:
+      - to: 'ops@example.com'
+        headers:
+          Subject: '【警告】{{ .GroupLabels.alertname }}'
+        html: |
+          {{ range .Alerts }}
+          <h3>告警详情:</h3>
+          <ul>
+            <li>告警名称: {{ .Labels.alertname }}</li>
+            <li>告警级别: {{ .Labels.severity }}</li>
+            <li>实例: {{ .Labels.instance }}</li>
+            <li>摘要: {{ .Annotations.summary }}</li>
+            <li>描述: {{ .Annotations.description }}</li>
+            <li>开始时间: {{ .StartsAt.Format "2006-01-02 15:04:05" }}</li>
+          </ul>
+          {{ end }}
+
+  # 监控系统告警接收器
+  - name: 'monitoring-system-alerts'
+    email_configs:
+      - to: 'monitoring-admin@example.com'
+        headers:
+          Subject: '【监控系统告警】{{ .GroupLabels.alertname }}'
+        html: |
+          {{ range .Alerts }}
+          <h3>监控系统告警:</h3>
+          <ul>
+            <li>告警名称: {{ .Labels.alertname }}</li>
+            <li>服务: {{ .Labels.job }}</li>
+            <li>实例: {{ .Labels.instance }}</li>
+            <li>摘要: {{ .Annotations.summary }}</li>
+            <li>描述: {{ .Annotations.description }}</li>
+            <li>开始时间: {{ .StartsAt.Format "2006-01-02 15:04:05" }}</li>
+          </ul>
+          {{ end }}
+
+# 告警抑制规则
+inhibit_rules:
+  # 如果主机宕机,抑制该主机的其他所有告警
+  - source_match:
+      alertname: 'HostDown'
+    target_match_re:
+      alertname: '.*'
+    equal: ['instance']
+
+  # 如果是严重告警,抑制同一告警的警告级别
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+  # 如果 VMware Exporter 宕机,抑制所有 VMware 相关告警
+  - source_match:
+      alertname: 'VMwareExporterDown'
+    target_match_re:
+      alertname: '(VMDown|ESXiHigh.*|VMHigh.*|DatastoreLowSpace)'
+    equal: ['cluster']
+
+  # 如果 SNMP Exporter 无法访问设备,抑制该设备的其他告警
+  - source_match:
+      alertname: 'SNMPExporterDown'
+    target_match_re:
+      alertname: '(InterfaceDown|HighInterfaceErrors|HighInterfaceTraffic)'
+    equal: ['instance']

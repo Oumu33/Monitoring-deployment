@@ -1,0 +1,40 @@
+# SNMP Exporter 配置文件
+#
+# 此配置文件包含常用的 SNMP 监控模块
+# 更多模块配置请参考: https://github.com/prometheus/snmp_exporter/tree/main/snmp.yml
+
+# 默认使用 if_mib 模块,适用于大多数网络设备的接口监控
+# 如果需要更多 MIB 模块,可以使用 snmp_exporter generator 工具生成
+
+# 此文件为占位符,建议使用官方预生成的配置文件
+#
+# 获取完整配置文件的方法:
+# 1. 从官方仓库下载预生成的 snmp.yml:
+#    wget https://github.com/prometheus/snmp_exporter/releases/latest/download/snmp.yml
+#
+# 2. 或者使用 generator 工具生成自定义配置:
+#    https://github.com/prometheus/snmp_exporter/tree/main/generator
+#
+# 3. 将生成的 snmp.yml 文件复制到此目录
+
+# 基本的 if_mib 模块示例(简化版)
+if_mib:
+  walk:
+    - 1.3.6.1.2.1.2              # interfaces
+    - 1.3.6.1.2.1.31             # ifXTable
+  metrics:
+    - name: ifOperStatus
+      oid: 1.3.6.1.2.1.2.2.1.8
+      type: gauge
+      help: The current operational state of the interface - 1.3.6.1.2.1.2.2.1.8
+      indexes:
+        - labelname: ifIndex
+          type: gauge
+      enum_values:
+        1: up
+        2: down
+        3: testing
+        4: unknown
+        5: dormant
+        6: notPresent
+        7: lowerLayerDown

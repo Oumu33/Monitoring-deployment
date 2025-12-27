@@ -1,0 +1,44 @@
+# 环境变量文件
+.env
+
+# Docker volumes
+volumes/
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+*.tmp
+*.swp
+*.swo
+*~
+
+# 备份文件
+backup/
+*.backup
+*.bak
+
+# OS 文件
+.DS_Store
+Thumbs.db
+.directory
+
+# IDE 文件
+.vscode/
+.idea/
+*.iml
+
+# Grafana 本地数据
+grafana-data/
+
+# 敏感配置文件
+**/secrets.yml
+**/credentials.json
+
+# Docker Compose 覆盖文件
+docker-compose.override.yml
+
+# 测试文件
+test/
+*.test
