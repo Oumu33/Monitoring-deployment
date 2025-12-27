@@ -1,0 +1,14 @@
+[
+  {
+    "targets": [
+      "192.168.1.100"
+    ],
+    "labels": {
+      "device_name": "core-switch-1",
+      "device_type": "switch",
+      "device_tier": "core",
+      "location": "datacenter-1",
+      "priority": "critical"
+    }
+  }
+]

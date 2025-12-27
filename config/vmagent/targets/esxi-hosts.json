@@ -1,0 +1,14 @@
+[
+  {
+    "targets": [
+      "192.168.2.10"
+    ],
+    "labels": {
+      "device_name": "esxi-01",
+      "device_type": "esxi",
+      "cluster": "production",
+      "location": "datacenter-1",
+      "priority": "critical"
+    }
+  }
+]

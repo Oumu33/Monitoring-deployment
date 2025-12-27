@@ -74,19 +74,15 @@ scrape_configs:
 
   # ===== Blackbox Exporter - 服务可用性探测 =====
 
-  # HTTP/HTTPS 网站探测
+  # HTTP/HTTPS 网站探测 - 文件服务发现
   - job_name: 'blackbox-http'
     metrics_path: /probe
     params:
       module: [http_2xx]  # 使用 http_2xx 模块
-    static_configs:
-      - targets:
-        # 示例: 监控网站
-        - https://www.google.com
-        # - https://www.company.com
-        # - http://internal-app.company.local
-        labels:
-          probe_type: 'http'
+    file_sd_configs:
+      - files:
+        - /etc/prometheus/targets/websites.json
+        refresh_interval: 30s
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -94,8 +90,11 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: blackbox-exporter:9115
+      - source_labels: [__param_target]
+        target_label: probe_type
+        replacement: 'http'
 
-  # HTTPS 探测（检查 SSL 证书）
+  # HTTPS 探测（检查 SSL 证书）- 静态配置（可选）
   - job_name: 'blackbox-https-ssl'
     metrics_path: /probe
     params:
@@ -115,22 +114,17 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox-exporter:9115
 
-  # ICMP Ping 探测（网络设备、服务器）
+  # ICMP Ping 探测 - 文件服务发现（推荐）
   - job_name: 'blackbox-icmp'
     metrics_path: /probe
     params:
       module: [icmp]
-    static_configs:
-      - targets:
-        # 网络设备 Ping 探测
-        - 192.168.1.100  # 交换机
-        # - 192.168.1.101  # 路由器
-        # - 192.168.1.1    # 网关
-        # ESXi 主机 Ping 探测
-        # - 192.168.1.10
-        # - 192.168.1.11
-        labels:
-          probe_type: 'icmp'
+    file_sd_configs:
+      - files:
+        - /etc/prometheus/targets/core-switches.json
+        - /etc/prometheus/targets/esxi-hosts.json
+        - /etc/prometheus/targets/*-switches.json  # 支持通配符
+        refresh_interval: 30s
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -138,6 +132,9 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: blackbox-exporter:9115
+      - source_labels: [__param_target]
+        target_label: probe_type
+        replacement: 'icmp'
 
   # TCP 端口探测（数据库、SSH 等）
   - job_name: 'blackbox-tcp'

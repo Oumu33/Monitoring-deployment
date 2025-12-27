@@ -1,0 +1,12 @@
+[
+  {
+    "targets": [
+      "https://www.google.com"
+    ],
+    "labels": {
+      "service_name": "google",
+      "service_type": "http",
+      "priority": "info"
+    }
+  }
+]

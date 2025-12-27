@@ -27,6 +27,7 @@ services:
       - "8429:8429"
     volumes:
       - ./config/vmagent/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/vmagent/targets:/etc/prometheus/targets  # 文件服务发现目录
       - vmagentdata:/vmagentdata
     command:
       - "--promscrape.config=/etc/prometheus/prometheus.yml"
