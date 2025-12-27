@@ -1,0 +1,73 @@
+# Linux 服务器监控配置示例
+
+scrape_configs:
+  # ===== 生产环境 Linux 服务器 =====
+  - job_name: 'linux-production'
+    scrape_interval: 15s
+    static_configs:
+      # Web 服务器
+      - targets:
+        - '192.168.1.10:9100'
+        - '192.168.1.11:9100'
+        - '192.168.1.12:9100'
+        labels:
+          env: 'production'
+          role: 'web-server'
+          location: 'datacenter-a'
+
+      # 数据库服务器
+      - targets:
+        - '192.168.1.20:9100'
+        - '192.168.1.21:9100'
+        labels:
+          env: 'production'
+          role: 'database-server'
+          location: 'datacenter-a'
+
+      # 应用服务器
+      - targets:
+        - '192.168.1.30:9100'
+        - '192.168.1.31:9100'
+        labels:
+          env: 'production'
+          role: 'app-server'
+          location: 'datacenter-a'
+
+  # ===== 测试环境 Linux 服务器 =====
+  - job_name: 'linux-staging'
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+        - '192.168.2.10:9100'
+        - '192.168.2.11:9100'
+        labels:
+          env: 'staging'
+          location: 'datacenter-b'
+
+  # ===== 使用文件服务发现 =====
+  # 将服务器列表保存在 JSON 文件中，便于动态管理
+  - job_name: 'linux-file-sd'
+    scrape_interval: 15s
+    file_sd_configs:
+      - files:
+        - '/etc/prometheus/targets/linux-servers.json'
+        refresh_interval: 5m
+
+# ===== 文件服务发现示例 =====
+# 创建文件: config/vmagent/targets/linux-servers.json
+# [
+#   {
+#     "targets": ["192.168.1.10:9100", "192.168.1.11:9100"],
+#     "labels": {
+#       "env": "production",
+#       "role": "web-server"
+#     }
+#   },
+#   {
+#     "targets": ["192.168.1.20:9100"],
+#     "labels": {
+#       "env": "production",
+#       "role": "database-server"
+#     }
+#   }
+# ]

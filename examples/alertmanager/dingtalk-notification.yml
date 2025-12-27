@@ -1,0 +1,142 @@
+# 钉钉机器人通知配置
+
+global:
+  resolve_timeout: 5m
+
+# 告警路由配置
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'dingtalk-default'
+
+  routes:
+    # 严重告警
+    - match:
+        severity: critical
+      receiver: 'dingtalk-critical'
+      group_wait: 10s
+      repeat_interval: 5m
+
+    # 警告告警
+    - match:
+        severity: warning
+      receiver: 'dingtalk-warning'
+      group_wait: 30s
+      repeat_interval: 30m
+
+# 告警接收器配置
+receivers:
+  # 默认钉钉通知
+  - name: 'dingtalk-default'
+    webhook_configs:
+      - url: 'http://dingtalk-webhook-adapter:8060/dingtalk/webhook1/send'
+        send_resolved: true
+
+  # 严重告警 - 钉钉群 1
+  - name: 'dingtalk-critical'
+    webhook_configs:
+      - url: 'http://dingtalk-webhook-adapter:8060/dingtalk/critical/send'
+        send_resolved: true
+
+  # 警告告警 - 钉钉群 2
+  - name: 'dingtalk-warning'
+    webhook_configs:
+      - url: 'http://dingtalk-webhook-adapter:8060/dingtalk/warning/send'
+        send_resolved: true
+
+# 告警抑制规则
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+# ===== 使用说明 =====
+#
+# 1. 获取钉钉机器人 Webhook URL:
+#    - 打开钉钉群聊
+#    - 点击群设置 -> 智能群助手 -> 添加机器人 -> 自定义机器人
+#    - 设置安全设置（推荐使用加签方式）
+#    - 复制 Webhook 地址和加签密钥
+#
+# 2. 部署 prometheus-webhook-dingtalk 适配器
+#
+# 3. 配置适配器的 config.yml
+#
+# 4. 钉钉机器人安全设置:
+#    - 自定义关键词: 配置 "告警" 关键词
+#    - 加签: 推荐使用，更安全
+#    - IP 地址段: 可选
+#
+# 5. 测试告警:
+#    curl -H "Content-Type: application/json" -d '[{
+#      "labels": {
+#        "alertname": "TestAlert",
+#        "severity": "critical"
+#      },
+#      "annotations": {
+#        "summary": "这是一条测试告警"
+#      }
+#    }]' http://localhost:9093/api/v1/alerts
+
+# ===== 在 docker-compose.yaml 中添加钉钉适配器 =====
+#
+# dingtalk-webhook-adapter:
+#   image: timonwong/prometheus-webhook-dingtalk:latest
+#   container_name: dingtalk-webhook-adapter
+#   ports:
+#     - "8060:8060"
+#   volumes:
+#     - ./config/dingtalk-adapter/config.yml:/etc/prometheus-webhook-dingtalk/config.yml
+#   command:
+#     - "--config.file=/etc/prometheus-webhook-dingtalk/config.yml"
+#   restart: unless-stopped
+#   networks:
+#     - monitoring
+
+# ===== 钉钉适配器配置文件示例 =====
+# 文件路径: config/dingtalk-adapter/config.yml
+#
+# templates:
+#   - /etc/prometheus-webhook-dingtalk/templates/default.tmpl
+#
+# targets:
+#   # 默认钉钉群
+#   webhook1:
+#     url: https://oapi.dingtalk.com/robot/send?access_token=YOUR_ACCESS_TOKEN
+#     secret: YOUR_SECRET  # 加签密钥（可选）
+#
+#   # 严重告警群
+#   critical:
+#     url: https://oapi.dingtalk.com/robot/send?access_token=CRITICAL_ACCESS_TOKEN
+#     secret: CRITICAL_SECRET
+#
+#   # 警告告警群
+#   warning:
+#     url: https://oapi.dingtalk.com/robot/send?access_token=WARNING_ACCESS_TOKEN
+#     secret: WARNING_SECRET
+#
+# ===== 自定义消息模板 =====
+# 文件路径: config/dingtalk-adapter/templates/custom.tmpl
+#
+# {{ define "ding.link.title" }}
+# {{ if eq .Status "firing" }}🔥 告警触发{{ else }}✅ 告警恢复{{ end }}
+# {{ end }}
+#
+# {{ define "ding.link.content" }}
+# ### {{ if eq .Status "firing" }}🔥 告警触发{{ else }}✅ 告警恢复{{ end }}
+#
+# {{ range .Alerts }}
+# **告警名称:** {{ .Labels.alertname }}
+# **告警级别:** {{ .Labels.severity }}
+# **实例:** {{ .Labels.instance }}
+# **摘要:** {{ .Annotations.summary }}
+# **描述:** {{ .Annotations.description }}
+# **触发时间:** {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+# {{ if ne .Status "firing" }}**恢复时间:** {{ .EndsAt.Format "2006-01-02 15:04:05" }}{{ end }}
+# ---
+# {{ end }}
+# {{ end }}

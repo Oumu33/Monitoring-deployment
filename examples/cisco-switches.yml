@@ -1,0 +1,161 @@
+# Cisco 交换机监控配置示例
+
+scrape_configs:
+  # ===== 核心交换机 =====
+  - job_name: 'cisco-core-switches'
+    scrape_interval: 60s
+    scrape_timeout: 50s
+    metrics_path: /snmp
+    params:
+      module: [cisco_ios]  # 使用 Cisco IOS 模块
+    static_configs:
+      - targets:
+        - 192.168.1.250  # 核心交换机 1
+        - 192.168.1.251  # 核心交换机 2
+        labels:
+          switch_role: 'core'
+          vendor: 'cisco'
+          location: 'datacenter-main'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116  # SNMP Exporter 地址
+
+  # ===== 汇聚交换机 =====
+  - job_name: 'cisco-distribution-switches'
+    scrape_interval: 60s
+    scrape_timeout: 50s
+    metrics_path: /snmp
+    params:
+      module: [cisco_ios]
+    static_configs:
+      - targets:
+        - 192.168.1.240  # 汇聚交换机 1
+        - 192.168.1.241  # 汇聚交换机 2
+        - 192.168.1.242  # 汇聚交换机 3
+        labels:
+          switch_role: 'distribution'
+          vendor: 'cisco'
+          location: 'datacenter-main'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116
+
+  # ===== 接入交换机 =====
+  - job_name: 'cisco-access-switches'
+    scrape_interval: 120s  # 接入交换机采集间隔更长
+    scrape_timeout: 100s
+    metrics_path: /snmp
+    params:
+      module: [if_mib]  # 接入交换机只采集基础接口信息
+    static_configs:
+      # 办公区交换机
+      - targets:
+        - 192.168.1.101
+        - 192.168.1.102
+        - 192.168.1.103
+        labels:
+          switch_role: 'access'
+          vendor: 'cisco'
+          location: 'office-floor-1'
+
+      # 机房接入交换机
+      - targets:
+        - 192.168.1.110
+        - 192.168.1.111
+        labels:
+          switch_role: 'access'
+          vendor: 'cisco'
+          location: 'datacenter-rack-a'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116
+
+  # ===== Cisco Nexus 数据中心交换机 =====
+  - job_name: 'cisco-nexus'
+    scrape_interval: 60s
+    scrape_timeout: 50s
+    metrics_path: /snmp
+    params:
+      module: [cisco_nxos]  # Nexus 专用模块
+    static_configs:
+      - targets:
+        - 192.168.1.230  # Nexus 核心交换机
+        - 192.168.1.231
+        labels:
+          switch_role: 'core'
+          vendor: 'cisco'
+          model: 'nexus'
+          location: 'datacenter-main'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116
+
+  # ===== 华为交换机 =====
+  - job_name: 'huawei-switches'
+    scrape_interval: 60s
+    scrape_timeout: 50s
+    metrics_path: /snmp
+    params:
+      module: [if_mib]  # 华为使用通用 if_mib 模块
+      auth: [public_v2]
+    static_configs:
+      - targets:
+        - 192.168.1.200
+        - 192.168.1.201
+        labels:
+          switch_role: 'core'
+          vendor: 'huawei'
+          location: 'datacenter-backup'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116
+
+  # ===== H3C 交换机 =====
+  - job_name: 'h3c-switches'
+    scrape_interval: 60s
+    scrape_timeout: 50s
+    metrics_path: /snmp
+    params:
+      module: [if_mib]
+    static_configs:
+      - targets:
+        - 192.168.1.210
+        - 192.168.1.211
+        labels:
+          switch_role: 'distribution'
+          vendor: 'h3c'
+          location: 'branch-office'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116
+
+# ===== 配置说明 =====
+# 1. 确保交换机已启用 SNMP
+# 2. 根据交换机型号选择正确的 module
+# 3. 核心/汇聚交换机使用较短的采集间隔（60s）
+# 4. 接入交换机使用较长的采集间隔（120s）以减轻负载
+# 5. 使用 labels 对交换机进行分类，便于告警和查询
