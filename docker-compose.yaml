@@ -126,17 +126,14 @@ services:
     networks:
       - monitoring
 
-  # VMware Exporter - VMware 环境监控
-  vmware-exporter:
-    image: pryorda/vmware_exporter:latest
-    container_name: vmware-exporter
-    ports:
-      - "9272:9272"
-    environment:
-      - VSPHERE_HOST=${VSPHERE_HOST}
-      - VSPHERE_USER=${VSPHERE_USER}
-      - VSPHERE_PASSWORD=${VSPHERE_PASSWORD}
-      - VSPHERE_IGNORE_SSL=${VSPHERE_IGNORE_SSL:-True}
+  # Telegraf - VMware 多集群监控 (替代 vmware-exporter)
+  telegraf-vmware:
+    image: telegraf:latest
+    container_name: telegraf-vmware
+    depends_on:
+      - victoriametrics
+    volumes:
+      - ./config/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     restart: unless-stopped
     networks:
       - monitoring

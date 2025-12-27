@@ -69,11 +69,6 @@ scrape_configs:
       - target_label: __address__
         replacement: snmp-exporter:9116
 
-  # VMware Exporter - VMware 虚拟化环境监控
-  - job_name: 'vmware-exporter'
-    static_configs:
-      - targets: ['vmware-exporter:9272']
-        labels:
-          service: 'vmware-exporter'
-    scrape_interval: 60s  # VMware 监控可以使用更长的抓取间隔
-    scrape_timeout: 50s
+  # 注意: Telegraf VMware 监控直接推送数据到 VictoriaMetrics
+  # 不需要在此处配置采集任务
+

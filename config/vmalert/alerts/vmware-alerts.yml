@@ -1,76 +1,72 @@
 groups:
-  - name: vmware-alerts
+  - name: vmware-telegraf-alerts
     interval: 60s
     rules:
-      # VMware Exporter 服务宕机
-      - alert: VMwareExporterDown
-        expr: up{job="vmware-exporter"} == 0
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "VMware Exporter 服务宕机"
-          description: "VMware Exporter 服务已经宕机超过 2 分钟,无法采集 VMware 监控数据"
-
       # 虚拟机宕机告警
       - alert: VMDown
-        expr: vmware_vm_power_state == 0
+        expr: vsphere_vm_power_state == 0
         for: 2m
         labels:
           severity: critical
+          category: vmware
         annotations:
-          summary: "虚拟机 {{ $labels.vm_name }} 已关机"
-          description: "虚拟机 {{ $labels.vm_name }} 在 ESXi 主机 {{ $labels.host_name }} 上处于关机状态"
+          summary: "虚拟机 {{ $labels.vmname }} 已关机"
+          description: "虚拟机 {{ $labels.vmname }} 在 ESXi 主机 {{ $labels.esxhostname }} 上处于关机状态"
 
       # ESXi 主机 CPU 使用率过高
       - alert: ESXiHighCPU
-        expr: vmware_host_cpu_usage > 90
+        expr: vsphere_host_cpu_usage_average > 90
         for: 10m
         labels:
           severity: warning
+          category: vmware
         annotations:
-          summary: "ESXi 主机 {{ $labels.host_name }} CPU 使用率过高"
-          description: "ESXi 主机 {{ $labels.host_name }} CPU 使用率为 {{ $value | humanize }}%"
+          summary: "ESXi 主机 {{ $labels.esxhostname }} CPU 使用率过高"
+          description: "ESXi 主机 {{ $labels.esxhostname }} CPU 使用率为 {{ $value | humanize }}%"
 
       # ESXi 主机内存使用率过高
       - alert: ESXiHighMemory
-        expr: vmware_host_memory_usage > 90
+        expr: vsphere_host_mem_usage_average > 90
         for: 10m
         labels:
           severity: warning
+          category: vmware
         annotations:
-          summary: "ESXi 主机 {{ $labels.host_name }} 内存使用率过高"
-          description: "ESXi 主机 {{ $labels.host_name }} 内存使用率为 {{ $value | humanize }}%"
+          summary: "ESXi 主机 {{ $labels.esxhostname }} 内存使用率过高"
+          description: "ESXi 主机 {{ $labels.esxhostname }} 内存使用率为 {{ $value | humanize }}%"
 
       # 虚拟机 CPU 使用率过高
       - alert: VMHighCPU
-        expr: vmware_vm_cpu_usage > 85
+        expr: vsphere_vm_cpu_usage_average > 85
         for: 10m
         labels:
           severity: warning
+          category: vmware
         annotations:
-          summary: "虚拟机 {{ $labels.vm_name }} CPU 使用率过高"
-          description: "虚拟机 {{ $labels.vm_name }} CPU 使用率为 {{ $value | humanize }}%"
+          summary: "虚拟机 {{ $labels.vmname }} CPU 使用率过高"
+          description: "虚拟机 {{ $labels.vmname }} CPU 使用率为 {{ $value | humanize }}%"
 
       # 虚拟机内存使用率过高
       - alert: VMHighMemory
-        expr: vmware_vm_mem_usage > 85
+        expr: vsphere_vm_mem_usage_average > 85
         for: 10m
         labels:
           severity: warning
+          category: vmware
         annotations:
-          summary: "虚拟机 {{ $labels.vm_name }} 内存使用率过高"
-          description: "虚拟机 {{ $labels.vm_name }} 内存使用率为 {{ $value | humanize }}%"
+          summary: "虚拟机 {{ $labels.vmname }} 内存使用率过高"
+          description: "虚拟机 {{ $labels.vmname }} 内存使用率为 {{ $value | humanize }}%"
 
       # 数据存储空间不足
       - alert: DatastoreLowSpace
-        expr: (vmware_datastore_freespace_size / vmware_datastore_capacity_size) * 100 < 15
+        expr: (vsphere_datastore_disk_used_latest / vsphere_datastore_disk_capacity_latest) * 100 > 85
         for: 10m
         labels:
           severity: warning
+          category: vmware
         annotations:
-          summary: "数据存储 {{ $labels.ds_name }} 空间不足"
-          description: "数据存储 {{ $labels.ds_name }} 剩余空间为 {{ $value | humanize }}%"
+          summary: "数据存储 {{ $labels.dsname }} 空间不足"
+          description: "数据存储 {{ $labels.dsname }} 已使用 {{ $value | humanize }}%"
 
   - name: snmp-alerts
     interval: 30s

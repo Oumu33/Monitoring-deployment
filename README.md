@@ -61,15 +61,27 @@ vim .env
 # Grafana 管理员账号
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=your-secure-password
-
-# VMware vCenter 连接信息
-VSPHERE_HOST=vcenter.example.com
-VSPHERE_USER=monitoring@vsphere.local
-VSPHERE_PASSWORD=your-vcenter-password
-VSPHERE_IGNORE_SSL=True
 ```
 
-### 3. 下载 SNMP Exporter 配置文件(推荐)
+### 3. 配置 VMware vCenter 连接
+
+编辑 `config/telegraf/telegraf.conf`,修改 vCenter 连接信息:
+
+```toml
+[[inputs.vsphere]]
+  vcenters = ["https://vcenter.example.com/sdk"]
+  username = "monitoring@vsphere.local"
+  password = "your-vcenter-password"
+  insecure_skip_verify = true
+
+  [inputs.vsphere.tags]
+    datacenter = "dc1"
+    env = "production"
+```
+
+**添加多个 vCenter**: 复制 `[[inputs.vsphere]]` 配置块即可。
+
+### 4. 下载 SNMP Exporter 配置文件(推荐)
 
 ```bash
 cd config/snmp-exporter
@@ -77,7 +89,7 @@ wget https://github.com/prometheus/snmp_exporter/releases/latest/download/snmp.y
 cd ../..
 ```
 
-### 4. 配置监控目标
+### 5. 配置监控目标
 
 编辑 `config/vmagent/prometheus.yml`,添加你的监控目标:
 
@@ -97,7 +109,7 @@ cd ../..
       - 192.168.1.101  # 路由器 IP
 ```
 
-### 5. 配置告警通知
+### 6. 配置告警通知
 
 编辑 `config/alertmanager/alertmanager.yml`,配置邮件通知:
 
@@ -109,13 +121,13 @@ global:
   smtp_auth_password: 'your-app-password'
 ```
 
-### 6. 启动服务
+### 7. 启动服务
 
 ```bash
 docker-compose up -d
 ```
 
-### 7. 验证服务状态
+### 8. 验证服务状态
 
 ```bash
 docker-compose ps
@@ -131,7 +143,6 @@ docker-compose ps
 - **Alertmanager**: http://localhost:9093
 - **Node Exporter**: http://localhost:9100/metrics
 - **SNMP Exporter**: http://localhost:9116/metrics
-- **VMware Exporter**: http://localhost:9272/metrics
 
 ## 监控目标配置
 
@@ -155,14 +166,33 @@ docker run -d \
 ### VMware 监控配置
 
 1. 在 vCenter 中创建只读监控账号
-2. 在 `.env` 文件中配置 vCenter 连接信息
-3. VMware Exporter 会自动发现并监控所有 ESXi 主机和虚拟机
+2. 编辑 `config/telegraf/telegraf.conf`,配置 vCenter 连接信息
+3. Telegraf 会自动发现并监控所有 ESXi 主机和虚拟机
+
+**监控多个 vCenter**:
+在配置文件中添加多个 `[[inputs.vsphere]]` 块即可：
+
+```toml
+# vCenter 1
+[[inputs.vsphere]]
+  vcenters = ["https://vcenter-dc1.example.com/sdk"]
+  username = "monitoring@vsphere.local"
+  password = "password1"
+  [inputs.vsphere.tags]
+    datacenter = "dc1"
+
+# vCenter 2
+[[inputs.vsphere]]
+  vcenters = ["https://vcenter-dc2.example.com/sdk"]
+  username = "monitoring@vsphere.local"
+  password = "password2"
+  [inputs.vsphere.tags]
+    datacenter = "dc2"
+```
 
 **多 vCenter 监控**:
-- **方案 1**: 部署多个 vmware-exporter 容器 (适合 1-2 个 vCenter)
-- **方案 2**: 使用 Telegraf 单实例 (推荐,适合 3+ 个 vCenter,资源节省 70%)
-
-详细对比和选择指南: [VMware 多集群监控方案对比](docs/VMWARE-SOLUTION-COMPARISON.md)
+- **优势**: 单实例监控多个 vCenter，资源节省 70%
+- **详细指南**: [VMware 多集群监控方案对比](docs/VMWARE-SOLUTION-COMPARISON.md)
 
 ### SNMP 设备监控
 
@@ -300,7 +330,7 @@ docker-compose up -d
 
 ```bash
 # 检查端口占用
-netstat -tlnp | grep -E '(3000|8428|9093|9116|9272)'
+netstat -tlnp | grep -E '(3000|8428|9093|9116)'
 
 # 检查 Docker 日志
 docker-compose logs
@@ -318,11 +348,12 @@ docker-compose logs
 2. 访问 vmalert UI: http://localhost:8880
 3. 验证告警规则语法
 
-### VMware Exporter 报错
+### Telegraf VMware 监控报错
 
-1. 检查 vCenter 连接信息
-2. 确认监控账号权限
-3. 查看详细日志: `docker-compose logs vmware-exporter`
+1. 检查 vCenter 连接信息: `config/telegraf/telegraf.conf`
+2. 确认监控账号权限（需要只读权限）
+3. 查看详细日志: `docker-compose logs telegraf-vmware`
+4. 验证 vCenter SDK 地址格式: `https://vcenter-fqdn/sdk`
 
 ## 目录结构
 
@@ -337,11 +368,14 @@ docker-compose logs
     │   └── prometheus.yml       # vmagent 采集配置
     ├── vmalert/
     │   └── alerts/              # 告警规则
-    │       ├── node-alerts.yml
-    │       ├── infra-alerts.yml
-    │       └── system-alerts.yml
+    │       ├── node-alerts.yml  # Linux 主机告警
+    │       ├── vmware-alerts.yml  # VMware 告警
+    │       ├── switch-alerts.yml  # 交换机告警
+    │       └── system-alerts.yml  # 监控系统告警
     ├── alertmanager/
     │   └── alertmanager.yml     # Alertmanager 配置
+    ├── telegraf/
+    │   └── telegraf.conf        # Telegraf VMware 监控配置
     ├── grafana/
     │   ├── provisioning/        # Grafana 自动配置
     │   │   ├── datasources/     # 数据源配置
