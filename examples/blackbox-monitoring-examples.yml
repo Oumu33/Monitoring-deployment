@@ -1,0 +1,215 @@
+# Blackbox Exporter 监控配置示例
+# 文件路径: examples/blackbox-monitoring-examples.yml
+
+# ===== 场景 1: 网站监控 =====
+
+# 监控公司网站和内部应用
+blackbox-http:
+  targets:
+    # 公司官网
+    - https://www.company.com
+    - https://www.company.com/login
+    - https://www.company.com/api/health
+
+    # 内部应用
+    - http://oa.company.local
+    - http://jenkins.company.local
+    - http://gitlab.company.local
+
+    # 监控服务
+    - http://grafana:3000
+    - http://victoriametrics:8428/health
+
+# HTTPS + SSL 证书监控
+blackbox-https-ssl:
+  targets:
+    # 生产环境 HTTPS 网站
+    - https://www.company.com
+    - https://api.company.com
+    - https://portal.company.com
+
+    # 监控 SSL 证书过期时间
+    # 会触发告警:
+    # - 30 天内过期: warning
+    # - 7 天内过期: critical
+
+# ===== 场景 2: 网络设备监控 =====
+
+# ICMP Ping 监控
+blackbox-icmp:
+  targets:
+    # 核心交换机
+    - 192.168.1.100  # 核心交换机 1
+    - 192.168.1.101  # 核心交换机 2
+
+    # 接入交换机
+    - 192.168.1.110  # 楼层 1 交换机
+    - 192.168.1.111  # 楼层 2 交换机
+    - 192.168.1.112  # 楼层 3 交换机
+
+    # 路由器和网关
+    - 192.168.1.1    # 主网关
+    - 192.168.1.254  # 出口路由器
+
+    # ESXi 主机
+    - 192.168.2.10   # ESXi-01
+    - 192.168.2.11   # ESXi-02
+    - 192.168.2.12   # ESXi-03
+
+    # vCenter
+    - 192.168.2.5    # vCenter Server
+
+# ===== 场景 3: 服务端口监控 =====
+
+# TCP 端口探测
+blackbox-tcp:
+  targets:
+    # 数据库服务
+    - 192.168.3.10:3306   # MySQL 主库
+    - 192.168.3.11:3306   # MySQL 从库
+    - 192.168.3.20:5432   # PostgreSQL
+    - 192.168.3.30:6379   # Redis Master
+    - 192.168.3.31:6379   # Redis Slave
+
+    # SSH 服务
+    - 192.168.4.10:22     # 应用服务器 1
+    - 192.168.4.11:22     # 应用服务器 2
+    - 192.168.4.20:22     # 数据库服务器
+
+    # VMware 服务
+    - vcenter.company.com:443
+    - 192.168.2.10:443    # ESXi-01 管理端口
+
+    # 内部服务
+    - 192.168.5.10:8080   # Tomcat 应用
+    - 192.168.5.20:9200   # Elasticsearch
+
+# ===== 场景 4: API 健康检查 =====
+
+# HTTP API 监控
+blackbox-http:
+  targets:
+    # RESTful API
+    - https://api.company.com/v1/health
+    - https://api.company.com/v1/status
+
+    # 内部微服务
+    - http://user-service:8080/actuator/health
+    - http://order-service:8080/actuator/health
+    - http://payment-service:8080/actuator/health
+
+# ===== 场景 5: 自签名证书场景 =====
+
+# 跳过 SSL 证书验证（用于内网自签名证书）
+blackbox-https-skip-verify:
+  module: http_2xx_skip_verify
+  targets:
+    - https://vcenter.company.local
+    - https://esxi-01.company.local
+    - https://gitlab.company.local
+
+# ===== 完整配置示例 =====
+
+# 在 config/vmagent/prometheus.yml 中添加:
+
+scrape_configs:
+  # 1. HTTP 网站监控
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - https://www.company.com
+        - http://oa.company.local
+        labels:
+          probe_type: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # 2. HTTPS + SSL 证书监控
+  - job_name: 'blackbox-https-ssl'
+    metrics_path: /probe
+    params:
+      module: [http_2xx_check_ssl]
+    static_configs:
+      - targets:
+        - https://www.company.com
+        - https://api.company.com
+        labels:
+          probe_type: 'https_ssl'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # 3. ICMP Ping 监控
+  - job_name: 'blackbox-icmp'
+    metrics_path: /probe
+    params:
+      module: [icmp]
+    static_configs:
+      - targets:
+        - 192.168.1.100  # 交换机
+        - 192.168.1.1    # 网关
+        - 192.168.2.10   # ESXi
+        labels:
+          probe_type: 'icmp'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # 4. TCP 端口监控
+  - job_name: 'blackbox-tcp'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+        - 192.168.3.10:3306   # MySQL
+        - 192.168.3.20:5432   # PostgreSQL
+        - 192.168.4.10:22     # SSH
+        labels:
+          probe_type: 'tcp'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+# ===== Grafana 查询示例 =====
+
+# 查看所有探测成功率
+probe_success
+
+# 查看 HTTP 响应时间
+probe_duration_seconds{job="blackbox-http"}
+
+# 查看 SSL 证书剩余天数
+(probe_ssl_earliest_cert_expiry - time()) / 86400
+
+# 查看 ICMP 延迟
+probe_icmp_duration_seconds
+
+# 查看 HTTP 状态码
+probe_http_status_code
+
+# 按探测类型统计成功率
+avg by (probe_type) (probe_success)
+
+# 按目标统计平均响应时间
+avg by (instance) (probe_duration_seconds)

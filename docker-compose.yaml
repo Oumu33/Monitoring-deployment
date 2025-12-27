@@ -138,6 +138,20 @@ services:
     networks:
       - monitoring
 
+  # Blackbox Exporter - 服务可用性探测
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: blackbox-exporter
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./config/blackbox-exporter/blackbox.yml:/etc/blackbox_exporter/config.yml
+    command:
+      - "--config.file=/etc/blackbox_exporter/config.yml"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
 volumes:
   vmdata:
   vmagentdata:

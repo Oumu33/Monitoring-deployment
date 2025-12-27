@@ -72,3 +72,101 @@ scrape_configs:
   # 注意: Telegraf VMware 监控直接推送数据到 VictoriaMetrics
   # 不需要在此处配置采集任务
 
+  # ===== Blackbox Exporter - 服务可用性探测 =====
+
+  # HTTP/HTTPS 网站探测
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]  # 使用 http_2xx 模块
+    static_configs:
+      - targets:
+        # 示例: 监控网站
+        - https://www.google.com
+        # - https://www.company.com
+        # - http://internal-app.company.local
+        labels:
+          probe_type: 'http'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # HTTPS 探测（检查 SSL 证书）
+  - job_name: 'blackbox-https-ssl'
+    metrics_path: /probe
+    params:
+      module: [http_2xx_check_ssl]
+    static_configs:
+      - targets:
+        # 示例: 监控 HTTPS 网站和 SSL 证书
+        # - https://www.company.com
+        # - https://api.company.com
+        labels:
+          probe_type: 'https_ssl'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ICMP Ping 探测（网络设备、服务器）
+  - job_name: 'blackbox-icmp'
+    metrics_path: /probe
+    params:
+      module: [icmp]
+    static_configs:
+      - targets:
+        # 网络设备 Ping 探测
+        - 192.168.1.100  # 交换机
+        # - 192.168.1.101  # 路由器
+        # - 192.168.1.1    # 网关
+        # ESXi 主机 Ping 探测
+        # - 192.168.1.10
+        # - 192.168.1.11
+        labels:
+          probe_type: 'icmp'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # TCP 端口探测（数据库、SSH 等）
+  - job_name: 'blackbox-tcp'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+        # 数据库端口探测
+        # - 192.168.1.20:3306   # MySQL
+        # - 192.168.1.21:5432   # PostgreSQL
+        # - 192.168.1.22:6379   # Redis
+        # SSH 端口探测
+        # - 192.168.1.10:22
+        # vCenter 端口探测
+        # - vcenter.company.com:443
+        labels:
+          probe_type: 'tcp'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Blackbox Exporter 自监控
+  - job_name: 'blackbox-exporter'
+    static_configs:
+      - targets: ['blackbox-exporter:9115']
+        labels:
+          service: 'blackbox-exporter'

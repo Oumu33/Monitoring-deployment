@@ -1,0 +1,158 @@
+# Blackbox Exporter 配置文件
+# 定义各种探测模块
+
+modules:
+  # ===== HTTP 探测模块 =====
+
+  # HTTP GET 探测（支持 HTTP/HTTPS）
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: []  # 默认接受 2xx 状态码
+      method: GET
+      fail_if_ssl: false
+      fail_if_not_ssl: false
+      preferred_ip_protocol: "ip4"
+      ip_protocol_fallback: false
+
+  # HTTP POST 探测
+  http_post_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      method: POST
+      headers:
+        Content-Type: application/json
+      body: '{}'
+
+  # HTTPS 探测（检查 SSL 证书）
+  http_2xx_check_ssl:
+    prober: http
+    timeout: 5s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: []
+      method: GET
+      fail_if_ssl: false
+      fail_if_not_ssl: true  # 必须是 HTTPS
+      tls_config:
+        insecure_skip_verify: false  # 验证 SSL 证书
+
+  # HTTPS 探测（跳过证书验证，用于自签名证书）
+  http_2xx_skip_verify:
+    prober: http
+    timeout: 5s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: []
+      method: GET
+      tls_config:
+        insecure_skip_verify: true  # 跳过证书验证
+
+  # HTTP 基本认证探测
+  http_2xx_basic_auth:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      basic_auth:
+        username: "monitoring"
+        password: "password"
+
+  # ===== ICMP Ping 探测模块 =====
+
+  # ICMP Ping (IPv4)
+  icmp:
+    prober: icmp
+    timeout: 5s
+    icmp:
+      preferred_ip_protocol: "ip4"
+      source_ip_address: ""
+
+  # ICMP Ping (IPv6)
+  icmp_ipv6:
+    prober: icmp
+    timeout: 5s
+    icmp:
+      preferred_ip_protocol: "ip6"
+
+  # ===== TCP 端口探测模块 =====
+
+  # TCP 连接探测（通用）
+  tcp_connect:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: "ip4"
+
+  # SSH 端口探测 (22)
+  tcp_ssh:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: "ip4"
+      query_response:
+        - expect: "^SSH-2.0-"
+
+  # MySQL 端口探测 (3306)
+  tcp_mysql:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: "ip4"
+
+  # PostgreSQL 端口探测 (5432)
+  tcp_postgres:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: "ip4"
+
+  # Redis 端口探测 (6379)
+  tcp_redis:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: "ip4"
+      query_response:
+        - send: "PING"
+        - expect: "PONG"
+
+  # ===== DNS 查询探测模块 =====
+
+  # DNS A 记录查询
+  dns_a:
+    prober: dns
+    timeout: 5s
+    dns:
+      query_name: "example.com"
+      query_type: "A"
+      preferred_ip_protocol: "ip4"
+
+  # DNS PTR 反向查询
+  dns_ptr:
+    prober: dns
+    timeout: 5s
+    dns:
+      query_type: "PTR"
+      preferred_ip_protocol: "ip4"
+
+# ===== 配置说明 =====
+#
+# 探测模块类型:
+# - http: HTTP/HTTPS 探测
+# - icmp: ICMP Ping 探测
+# - tcp: TCP 端口探测
+# - dns: DNS 查询探测
+#
+# 常用配置参数:
+# - timeout: 探测超时时间
+# - preferred_ip_protocol: IP 协议版本 (ip4/ip6)
+# - valid_status_codes: 有效的 HTTP 状态码
+# - insecure_skip_verify: 是否跳过 SSL 证书验证
+#
+# 使用方式:
+# 在 vmagent/prometheus.yml 中引用模块名称
+# 例如: module: [http_2xx]

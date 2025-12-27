@@ -1,0 +1,144 @@
+groups:
+  - name: blackbox-http-alerts
+    interval: 30s
+    rules:
+      # HTTP/HTTPS 探测失败
+      - alert: WebsiteDown
+        expr: probe_success{job="blackbox-http"} == 0 or probe_success{job="blackbox-https-ssl"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "网站 {{ $labels.instance }} 无法访问"
+          description: "网站 {{ $labels.instance }} 已经无法访问超过 2 分钟"
+
+      # HTTP 响应时间过长
+      - alert: WebsiteSlow
+        expr: probe_duration_seconds{job="blackbox-http"} > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "网站 {{ $labels.instance }} 响应缓慢"
+          description: "网站 {{ $labels.instance }} 响应时间为 {{ $value | humanizeDuration }}"
+
+      # HTTP 状态码异常
+      - alert: WebsiteHTTPStatusCode
+        expr: probe_http_status_code{job="blackbox-http"} >= 400
+        for: 2m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: "网站 {{ $labels.instance }} 返回异常状态码"
+          description: "网站 {{ $labels.instance }} 返回状态码 {{ $value }}"
+
+      # SSL 证书即将过期（30 天内）
+      - alert: SSLCertificateExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry{job="blackbox-https-ssl"} - time()) / 86400 < 30
+        for: 1h
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "{{ $labels.instance }} SSL 证书即将过期"
+          description: "{{ $labels.instance }} 的 SSL 证书将在 {{ $value | humanize }} 天后过期"
+
+      # SSL 证书即将过期（7 天内）
+      - alert: SSLCertificateExpiringCritical
+        expr: (probe_ssl_earliest_cert_expiry{job="blackbox-https-ssl"} - time()) / 86400 < 7
+        for: 1h
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "{{ $labels.instance }} SSL 证书紧急过期警告"
+          description: "{{ $labels.instance }} 的 SSL 证书将在 {{ $value | humanize }} 天后过期，请立即续期"
+
+      # SSL 证书已过期
+      - alert: SSLCertificateExpired
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox-https-ssl"} < time()
+        for: 1m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "{{ $labels.instance }} SSL 证书已过期"
+          description: "{{ $labels.instance }} 的 SSL 证书已经过期"
+
+  - name: blackbox-icmp-alerts
+    interval: 30s
+    rules:
+      # ICMP Ping 探测失败（设备不可达）
+      - alert: HostDown
+        expr: probe_success{job="blackbox-icmp"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "主机 {{ $labels.instance }} 无法 Ping 通"
+          description: "主机 {{ $labels.instance }} 已经无法 Ping 通超过 2 分钟"
+
+      # ICMP 丢包率过高
+      - alert: HighPacketLoss
+        expr: probe_icmp_reply_packet_loss_percent{job="blackbox-icmp"} > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "主机 {{ $labels.instance }} 丢包率过高"
+          description: "主机 {{ $labels.instance }} 丢包率为 {{ $value | humanize }}%"
+
+      # ICMP 延迟过高
+      - alert: HighICMPLatency
+        expr: probe_icmp_duration_seconds{job="blackbox-icmp"} > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: network
+        annotations:
+          summary: "主机 {{ $labels.instance }} 网络延迟过高"
+          description: "主机 {{ $labels.instance }} Ping 延迟为 {{ $value | humanizeDuration }}"
+
+  - name: blackbox-tcp-alerts
+    interval: 30s
+    rules:
+      # TCP 端口无法连接
+      - alert: TCPPortDown
+        expr: probe_success{job="blackbox-tcp"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "TCP 端口 {{ $labels.instance }} 无法连接"
+          description: "TCP 端口 {{ $labels.instance }} 已经无法连接超过 2 分钟"
+
+      # TCP 连接时间过长
+      - alert: TCPConnectionSlow
+        expr: probe_duration_seconds{job="blackbox-tcp"} > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "TCP 端口 {{ $labels.instance }} 连接缓慢"
+          description: "TCP 端口 {{ $labels.instance }} 连接时间为 {{ $value | humanizeDuration }}"
+
+  - name: blackbox-exporter-health
+    interval: 30s
+    rules:
+      # Blackbox Exporter 服务宕机
+      - alert: BlackboxExporterDown
+        expr: up{job="blackbox-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: monitoring
+        annotations:
+          summary: "Blackbox Exporter 服务宕机"
+          description: "Blackbox Exporter 服务已经宕机超过 2 分钟，无法进行服务可用性探测"
