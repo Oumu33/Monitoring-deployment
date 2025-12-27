@@ -1,0 +1,129 @@
+# 多 VMware 集群监控配置
+
+version: '3.8'
+
+services:
+  # ===== 主数据中心 vCenter =====
+  vmware-exporter-dc1:
+    image: pryorda/vmware_exporter:latest
+    container_name: vmware-exporter-dc1
+    ports:
+      - "9272:9272"
+    environment:
+      - VSPHERE_HOST=${VSPHERE_DC1_HOST}
+      - VSPHERE_USER=${VSPHERE_DC1_USER}
+      - VSPHERE_PASSWORD=${VSPHERE_DC1_PASSWORD}
+      - VSPHERE_IGNORE_SSL=${VSPHERE_IGNORE_SSL:-True}
+    labels:
+      - "datacenter=dc1"
+      - "location=main"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # ===== 灾备数据中心 vCenter =====
+  vmware-exporter-dc2:
+    image: pryorda/vmware_exporter:latest
+    container_name: vmware-exporter-dc2
+    ports:
+      - "9273:9272"
+    environment:
+      - VSPHERE_HOST=${VSPHERE_DC2_HOST}
+      - VSPHERE_USER=${VSPHERE_DC2_USER}
+      - VSPHERE_PASSWORD=${VSPHERE_DC2_PASSWORD}
+      - VSPHERE_IGNORE_SSL=${VSPHERE_IGNORE_SSL:-True}
+    labels:
+      - "datacenter=dc2"
+      - "location=backup"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # ===== 分支机构 vCenter =====
+  vmware-exporter-branch:
+    image: pryorda/vmware_exporter:latest
+    container_name: vmware-exporter-branch
+    ports:
+      - "9274:9272"
+    environment:
+      - VSPHERE_HOST=${VSPHERE_BRANCH_HOST}
+      - VSPHERE_USER=${VSPHERE_BRANCH_USER}
+      - VSPHERE_PASSWORD=${VSPHERE_BRANCH_PASSWORD}
+      - VSPHERE_IGNORE_SSL=${VSPHERE_IGNORE_SSL:-True}
+    labels:
+      - "datacenter=branch"
+      - "location=remote"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # ===== 开发测试环境 vCenter =====
+  vmware-exporter-dev:
+    image: pryorda/vmware_exporter:latest
+    container_name: vmware-exporter-dev
+    ports:
+      - "9275:9272"
+    environment:
+      - VSPHERE_HOST=${VSPHERE_DEV_HOST}
+      - VSPHERE_USER=${VSPHERE_DEV_USER}
+      - VSPHERE_PASSWORD=${VSPHERE_DEV_PASSWORD}
+      - VSPHERE_IGNORE_SSL=${VSPHERE_IGNORE_SSL:-True}
+    labels:
+      - "datacenter=dev"
+      - "location=office"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    external: true
+    name: monitoring-deployment_monitoring
+
+# ===== vmagent 采集配置 =====
+# 在 config/vmagent/prometheus.yml 中添加:
+#
+# scrape_configs:
+#   # 主数据中心
+#   - job_name: 'vmware-dc1'
+#     static_configs:
+#       - targets: ['vmware-exporter-dc1:9272']
+#         labels:
+#           datacenter: 'dc1'
+#           location: 'main'
+#           env: 'production'
+#     scrape_interval: 60s
+#     scrape_timeout: 50s
+#
+#   # 灾备数据中心
+#   - job_name: 'vmware-dc2'
+#     static_configs:
+#       - targets: ['vmware-exporter-dc2:9272']
+#         labels:
+#           datacenter: 'dc2'
+#           location: 'backup'
+#           env: 'production'
+#     scrape_interval: 60s
+#     scrape_timeout: 50s
+#
+#   # 分支机构
+#   - job_name: 'vmware-branch'
+#     static_configs:
+#       - targets: ['vmware-exporter-branch:9272']
+#         labels:
+#           datacenter: 'branch'
+#           location: 'remote'
+#           env: 'production'
+#     scrape_interval: 120s  # 分支机构采集间隔更长
+#     scrape_timeout: 100s
+#
+#   # 开发测试环境
+#   - job_name: 'vmware-dev'
+#     static_configs:
+#       - targets: ['vmware-exporter-dev:9272']
+#         labels:
+#           datacenter: 'dev'
+#           location: 'office'
+#           env: 'development'
+#     scrape_interval: 300s  # 开发环境采集间隔最长
+#     scrape_timeout: 240s

@@ -1,0 +1,325 @@
+# 性能优化版 Docker Compose 配置
+# 适用于中型监控环境 (100-200台主机，300-500万时间序列)
+
+version: '3.8'
+
+services:
+  # ===== VictoriaMetrics - 优化版 =====
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    container_name: victoriametrics
+    ports:
+      - "8428:8428"
+    volumes:
+      - vmdata:/storage
+    command:
+      # 基础配置
+      - "--storageDataPath=/storage"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=6"  # 6个月保留期
+
+      # 内存优化
+      - "--memory.allowedPercent=70"
+
+      # 查询性能优化
+      - "--search.maxQueryDuration=60s"
+      - "--search.maxConcurrentRequests=16"
+      - "--search.maxSamplesPerQuery=1e8"
+      - "--search.maxSeries=1e6"
+      - "--search.maxPointsPerTimeseries=30000"
+
+      # 缓存优化
+      - "--cacheExpireDuration=30m"
+
+      # 去重优化
+      - "--dedup.minScrapeInterval=30s"
+
+      # 写入优化
+      - "--maxInsertRequestSize=32MB"
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8428/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===== vmagent - 优化版 =====
+  vmagent:
+    image: victoriametrics/vmagent:latest
+    container_name: vmagent
+    depends_on:
+      - victoriametrics
+    ports:
+      - "8429:8429"
+    volumes:
+      - ./config/vmagent/prometheus.yml:/etc/prometheus/prometheus.yml
+      - vmagentdata:/vmagentdata
+    command:
+      - "--promscrape.config=/etc/prometheus/prometheus.yml"
+      - "--remoteWrite.url=http://victoriametrics:8428/api/v1/write"
+
+      # 批量写入优化
+      - "--remoteWrite.maxBlockSize=16MB"
+      - "--remoteWrite.maxRowsPerBlock=20000"
+      - "--remoteWrite.flushInterval=10s"
+      - "--remoteWrite.queues=4"
+      - "--remoteWrite.maxDiskUsagePerURL=5GB"
+
+      # 内存优化
+      - "--memory.allowedPercent=70"
+
+      # 采集优化
+      - "--promscrape.maxScrapeSize=32MB"
+      - "--promscrape.streamParse=true"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - monitoring
+
+  # ===== vmalert - 优化版 =====
+  vmalert:
+    image: victoriametrics/vmalert:latest
+    container_name: vmalert
+    depends_on:
+      - victoriametrics
+      - alertmanager
+    ports:
+      - "8880:8880"
+    volumes:
+      - ./config/vmalert/alerts:/etc/alerts
+    command:
+      - "--datasource.url=http://victoriametrics:8428"
+      - "--remoteRead.url=http://victoriametrics:8428"
+      - "--remoteWrite.url=http://victoriametrics:8428"
+      - "--notifier.url=http://alertmanager:9093"
+      - "--rule=/etc/alerts/*.yml"
+      - "--httpListenAddr=:8880"
+      - "--evaluationInterval=30s"  # 评估间隔
+      - "--remoteWrite.maxQueueSize=10000"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - monitoring
+
+  # ===== Alertmanager - 优化版 =====
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager-data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+      - "--data.retention=120h"
+      - "--alerts.gc-interval=30m"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - monitoring
+
+  # ===== Grafana - 优化版 =====
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    depends_on:
+      - victoriametrics
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+
+      # 数据库优化
+      - GF_DATABASE_MAX_OPEN_CONNS=100
+      - GF_DATABASE_MAX_IDLE_CONNS=10
+
+      # 代理优化
+      - GF_DATAPROXY_TIMEOUT=60
+      - GF_DATAPROXY_KEEP_ALIVE_SECONDS=60
+      - GF_DATAPROXY_MAX_IDLE_CONNECTIONS=100
+
+      # 渲染优化
+      - GF_RENDERING_CONCURRENT_RENDER_LIMIT=5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - monitoring
+
+  # ===== Node Exporter =====
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+      - "--collector.netclass.ignored-devices=^(veth.*|docker.*|br-.*)$$"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    networks:
+      - monitoring
+
+  # ===== SNMP Exporter =====
+  snmp-exporter:
+    image: prom/snmp-exporter:latest
+    container_name: snmp-exporter
+    ports:
+      - "9116:9116"
+    volumes:
+      - ./config/snmp-exporter/snmp.yml:/etc/snmp_exporter/snmp.yml
+    command:
+      - "--config.file=/etc/snmp_exporter/snmp.yml"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    networks:
+      - monitoring
+
+  # ===== VMware Exporter =====
+  vmware-exporter:
+    image: pryorda/vmware_exporter:latest
+    container_name: vmware-exporter
+    ports:
+      - "9272:9272"
+    environment:
+      - VSPHERE_HOST=${VSPHERE_HOST}
+      - VSPHERE_USER=${VSPHERE_USER}
+      - VSPHERE_PASSWORD=${VSPHERE_PASSWORD}
+      - VSPHERE_IGNORE_SSL=${VSPHERE_IGNORE_SSL:-True}
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    networks:
+      - monitoring
+
+volumes:
+  vmdata:
+    driver: local
+    # 可选: 使用外部 SSD 存储
+    # driver_opts:
+    #   type: none
+    #   o: bind
+    #   device: /mnt/ssd/vmdata
+  vmagentdata:
+  grafana-data:
+  alertmanager-data:
+
+networks:
+  monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ===== 使用说明 =====
+# 1. 复制此文件到项目根目录
+# 2. 根据实际硬件资源调整 resources 限制
+# 3. 应用系统级优化: sudo sysctl -p examples/performance/sysctl-optimization.conf
+# 4. 启动服务: docker-compose up -d
+# 5. 验证性能: ./scripts/health-check.sh

@@ -1,0 +1,377 @@
+# 告警模板配置 - 高级版
+
+global:
+  resolve_timeout: 5m
+  # SMTP 配置
+  smtp_from: 'alertmanager@example.com'
+  smtp_smarthost: 'smtp.example.com:587'
+  smtp_auth_username: 'alertmanager@example.com'
+  smtp_auth_password: 'your-password'
+  smtp_require_tls: true
+
+# 告警模板配置
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# 路由配置
+route:
+  # 默认分组
+  group_by: ['alertname', 'cluster', 'datacenter', 'service']
+  group_wait: 10s        # 第一个告警等待时间
+  group_interval: 10s    # 同组新告警间隔
+  repeat_interval: 12h   # 重复发送间隔
+  receiver: 'default-receiver'
+
+  # 子路由配置
+  routes:
+    # ===== 严重告警 - 立即通知所有渠道 =====
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 5s
+      repeat_interval: 5m
+      continue: false  # 不继续匹配其他路由
+
+    # ===== 数据中心级别告警 =====
+    - match_re:
+        datacenter: (dc1|dc2)
+      receiver: 'datacenter-ops'
+      group_by: ['datacenter', 'alertname']
+      group_wait: 15s
+      repeat_interval: 30m
+
+    # ===== VMware 相关告警 =====
+    - match_re:
+        job: vmware.*
+      receiver: 'vmware-team'
+      group_by: ['datacenter', 'alertname', 'vm_name']
+      group_wait: 20s
+      repeat_interval: 1h
+      routes:
+        # 虚拟机宕机 - 高优先级
+        - match:
+            alertname: VMDown
+          receiver: 'vmware-critical'
+          repeat_interval: 10m
+
+        # ESXi 主机问题 - 高优先级
+        - match_re:
+            alertname: (ESXiHighCPU|ESXiHighMemory|ESXiHostDown)
+          receiver: 'vmware-critical'
+          repeat_interval: 15m
+
+    # ===== 网络设备告警 =====
+    - match_re:
+        job: (snmp-exporter|cisco-.*)
+      receiver: 'network-team'
+      group_by: ['switch_role', 'alertname', 'instance']
+      group_wait: 30s
+      repeat_interval: 2h
+      routes:
+        # 核心交换机 - 最高优先级
+        - match:
+            switch_role: core
+          receiver: 'network-critical'
+          repeat_interval: 5m
+
+        # Trunk 口和上联口告警
+        - match_re:
+            alertname: (SwitchTrunkPortDown|SwitchUplinkPortDown)
+          receiver: 'network-critical'
+          repeat_interval: 10m
+
+    # ===== Linux 主机告警 =====
+    - match:
+        job: node-exporter
+      receiver: 'linux-ops'
+      group_by: ['env', 'role', 'alertname']
+      group_wait: 15s
+      repeat_interval: 1h
+      routes:
+        # 生产环境主机
+        - match:
+            env: production
+          receiver: 'linux-production'
+          repeat_interval: 15m
+
+        # 数据库服务器
+        - match:
+            role: database-server
+          receiver: 'database-team'
+          repeat_interval: 10m
+
+    # ===== 监控系统自身告警 =====
+    - match_re:
+        job: (victoriametrics|vmagent|vmalert|alertmanager)
+      receiver: 'monitoring-admin'
+      group_wait: 5s
+      repeat_interval: 10m
+      routes:
+        # 监控系统宕机 - 最高优先级
+        - match_re:
+            alertname: (VictoriaMetricsDown|VMAgentDown|VMAlertDown)
+          receiver: 'monitoring-emergency'
+          repeat_interval: 5m
+
+    # ===== 业务时间告警（工作日/非工作日区分）=====
+    - match:
+        severity: warning
+      receiver: 'warning-business-hours'
+      # 工作日：周一到周五 9:00-18:00
+      active_time_intervals:
+        - business_hours
+      routes:
+        # 非工作时间降低通知频率
+        - receiver: 'warning-off-hours'
+          repeat_interval: 4h
+
+    # ===== 租户隔离告警 =====
+    - match:
+        tenant: finance
+      receiver: 'tenant-finance'
+      group_by: ['tenant', 'alertname']
+
+    - match:
+        tenant: development
+      receiver: 'tenant-dev'
+      group_by: ['tenant', 'alertname']
+
+    - match:
+        tenant: operations
+      receiver: 'tenant-ops'
+      group_by: ['tenant', 'alertname']
+
+# 活动时间配置（工作时间）
+time_intervals:
+  - name: business_hours
+    time_intervals:
+      - times:
+        - start_time: '09:00'
+          end_time: '18:00'
+        weekdays: ['monday:friday']
+        location: 'Asia/Shanghai'
+
+  - name: off_hours
+    time_intervals:
+      - times:
+        - start_time: '18:00'
+          end_time: '09:00'
+        weekdays: ['monday:friday']
+      - weekdays: ['saturday', 'sunday']
+        location: 'Asia/Shanghai'
+
+# 告警接收器配置
+receivers:
+  # ===== 默认接收器 =====
+  - name: 'default-receiver'
+    email_configs:
+      - to: 'ops@example.com'
+        headers:
+          Subject: '【监控告警】{{ .GroupLabels.alertname }}'
+        html: '{{ template "email.default.html" . }}'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/webhook/default'
+        send_resolved: true
+
+  # ===== 严重告警 - 多渠道通知 =====
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'ops-critical@example.com,manager@example.com'
+        headers:
+          Subject: '🔥【严重告警】{{ .GroupLabels.alertname }}'
+          Priority: 'urgent'
+        html: '{{ template "email.critical.html" . }}'
+    webhook_configs:
+      # 企业微信
+      - url: 'http://webhook-adapter:8060/wechat/critical'
+        send_resolved: true
+      # 钉钉
+      - url: 'http://webhook-adapter:8060/dingtalk/critical'
+        send_resolved: true
+      # 短信通知（自定义 webhook）
+      - url: 'http://sms-gateway:8080/send'
+        send_resolved: false
+        http_config:
+          bearer_token: 'your-sms-token'
+    # PagerDuty 集成（可选）
+    pagerduty_configs:
+      - service_key: 'your-pagerduty-key'
+        severity: 'critical'
+
+  # ===== 数据中心运维团队 =====
+  - name: 'datacenter-ops'
+    email_configs:
+      - to: 'dc-ops@example.com'
+        html: '{{ template "email.datacenter.html" . }}'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/datacenter'
+
+  # ===== VMware 运维团队 =====
+  - name: 'vmware-team'
+    email_configs:
+      - to: 'vmware-ops@example.com'
+        html: '{{ template "email.vmware.html" . }}'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/vmware'
+
+  - name: 'vmware-critical'
+    email_configs:
+      - to: 'vmware-ops@example.com,vmware-manager@example.com'
+        headers:
+          Priority: 'urgent'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/vmware-critical'
+      - url: 'http://webhook-adapter:8060/dingtalk/vmware-critical'
+
+  # ===== 网络运维团队 =====
+  - name: 'network-team'
+    email_configs:
+      - to: 'network-ops@example.com'
+        html: '{{ template "email.network.html" . }}'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/network'
+
+  - name: 'network-critical'
+    email_configs:
+      - to: 'network-ops@example.com,network-manager@example.com'
+        headers:
+          Priority: 'urgent'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/network-critical'
+      - url: 'http://sms-gateway:8080/send'
+
+  # ===== Linux 运维团队 =====
+  - name: 'linux-ops'
+    email_configs:
+      - to: 'linux-ops@example.com'
+        html: '{{ template "email.linux.html" . }}'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/linux'
+
+  - name: 'linux-production'
+    email_configs:
+      - to: 'linux-ops@example.com,sre@example.com'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/linux-prod'
+
+  # ===== 数据库团队 =====
+  - name: 'database-team'
+    email_configs:
+      - to: 'dba@example.com'
+        html: '{{ template "email.database.html" . }}'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/database'
+
+  # ===== 监控系统管理员 =====
+  - name: 'monitoring-admin'
+    email_configs:
+      - to: 'monitoring-admin@example.com'
+        headers:
+          Subject: '⚠️【监控系统告警】{{ .GroupLabels.alertname }}'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/monitoring'
+
+  - name: 'monitoring-emergency'
+    email_configs:
+      - to: 'monitoring-admin@example.com,ops-manager@example.com'
+        headers:
+          Priority: 'urgent'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/monitoring-critical'
+      - url: 'http://sms-gateway:8080/send'
+
+  # ===== 工作时间告警 =====
+  - name: 'warning-business-hours'
+    email_configs:
+      - to: 'ops@example.com'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/warning'
+
+  - name: 'warning-off-hours'
+    email_configs:
+      - to: 'ops-oncall@example.com'
+
+  # ===== 租户告警接收器 =====
+  - name: 'tenant-finance'
+    email_configs:
+      - to: 'finance-it@example.com'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/tenant-finance'
+
+  - name: 'tenant-dev'
+    email_configs:
+      - to: 'dev-ops@example.com'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/tenant-dev'
+
+  - name: 'tenant-ops'
+    email_configs:
+      - to: 'ops-team@example.com'
+    webhook_configs:
+      - url: 'http://webhook-adapter:8060/wechat/tenant-ops'
+
+# 告警抑制规则
+inhibit_rules:
+  # 主机宕机抑制该主机的所有其他告警
+  - source_match:
+      alertname: 'HostDown'
+    target_match_re:
+      alertname: '(HighCPUUsage|HighMemoryUsage|HighDiskUsage|.*)'
+    equal: ['instance']
+
+  # ESXi 主机宕机抑制该主机上所有虚拟机告警
+  - source_match:
+      alertname: 'ESXiHostDown'
+    target_match_re:
+      alertname: '(VMDown|VMHighCPU|VMHighMemory)'
+    equal: ['host_name']
+
+  # 核心交换机宕机抑制下联设备告警
+  - source_match:
+      alertname: 'SwitchDown'
+      switch_role: 'core'
+    target_match_re:
+      alertname: '.*'
+      switch_role: '(distribution|access)'
+    equal: ['datacenter']
+
+  # VMware Exporter 宕机抑制所有 VMware 相关告警
+  - source_match:
+      alertname: 'VMwareExporterDown'
+    target_match_re:
+      alertname: '(VMDown|ESXi.*|VMHigh.*|Datastore.*)'
+    equal: ['datacenter']
+
+  # SNMP Exporter 无法访问设备时，抑制该设备的其他告警
+  - source_match:
+      alertname: 'SNMPExporterDown'
+    target_match_re:
+      alertname: '(InterfaceDown|HighInterfaceErrors|Switch.*)'
+    equal: ['instance']
+
+  # 严重告警抑制同类型的警告告警
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+  # 数据中心级别故障抑制单点告警
+  - source_match_re:
+      alertname: '(DatacenterPowerOutage|NetworkOutage)'
+    target_match_re:
+      alertname: '.*'
+    equal: ['datacenter']
+
+  # VictoriaMetrics 宕机抑制存储相关告警
+  - source_match:
+      alertname: 'VictoriaMetricsDown'
+    target_match_re:
+      alertname: '(VMStorageLowSpace|VMAgentBufferFull)'
+
+# ===== 说明 =====
+# 1. 告警分级：critical > warning > info
+# 2. 通知渠道：邮件 + 企业微信/钉钉 + 短信（严重告警）
+# 3. 通知策略：根据告警级别、时间、团队进行路由
+# 4. 抑制规则：避免告警风暴，只通知根因告警
+# 5. 时间配置：区分工作时间和非工作时间

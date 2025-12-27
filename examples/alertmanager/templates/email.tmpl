@@ -1,0 +1,368 @@
+{{ define "email.default.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .header { background: #3498db; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .header.firing { background: #e74c3c; }
+        .header.resolved { background: #27ae60; }
+        .alert-info { background: #ecf0f1; padding: 15px; margin: 15px 0; border-left: 4px solid #3498db; }
+        .alert-info.critical { border-left-color: #e74c3c; }
+        .alert-info.warning { border-left-color: #f39c12; }
+        .label { display: inline-block; background: #95a5a6; color: white; padding: 3px 8px; margin: 2px; border-radius: 3px; font-size: 12px; }
+        .metric { font-family: monospace; background: #2c3e50; color: #ecf0f1; padding: 10px; margin: 10px 0; border-radius: 3px; }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #bdc3c7; }
+        th { background: #34495e; color: white; }
+        .footer { text-align: center; color: #7f8c8d; padding: 20px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header {{ .Status }}">
+            <h1>{{ if eq .Status "firing" }}🔥 告警触发{{ else }}✅ 告警恢复{{ end }}</h1>
+            <p>{{ .GroupLabels.alertname }} - {{ .GroupLabels.cluster }}</p>
+        </div>
+
+        {{ range .Alerts }}
+        <div class="alert-info {{ .Labels.severity }}">
+            <h2>{{ .Annotations.summary }}</h2>
+            <p><strong>描述：</strong>{{ .Annotations.description }}</p>
+
+            <table>
+                <tr>
+                    <th>标签</th>
+                    <th>值</th>
+                </tr>
+                <tr>
+                    <td>告警名称</td>
+                    <td>{{ .Labels.alertname }}</td>
+                </tr>
+                <tr>
+                    <td>告警级别</td>
+                    <td><span class="label">{{ .Labels.severity }}</span></td>
+                </tr>
+                <tr>
+                    <td>实例</td>
+                    <td>{{ .Labels.instance }}</td>
+                </tr>
+                {{ if .Labels.job }}
+                <tr>
+                    <td>任务</td>
+                    <td>{{ .Labels.job }}</td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.datacenter }}
+                <tr>
+                    <td>数据中心</td>
+                    <td>{{ .Labels.datacenter }}</td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.env }}
+                <tr>
+                    <td>环境</td>
+                    <td>{{ .Labels.env }}</td>
+                </tr>
+                {{ end }}
+                <tr>
+                    <td>触发时间</td>
+                    <td>{{ .StartsAt.Format "2006-01-02 15:04:05" }}</td>
+                </tr>
+                {{ if ne .Status "firing" }}
+                <tr>
+                    <td>恢复时间</td>
+                    <td>{{ .EndsAt.Format "2006-01-02 15:04:05" }}</td>
+                </tr>
+                {{ end }}
+            </table>
+
+            {{ if .GeneratorURL }}
+            <p><a href="{{ .GeneratorURL }}" style="color: #3498db;">查看详情 →</a></p>
+            {{ end }}
+        </div>
+        {{ end }}
+
+        <div class="footer">
+            <p>此告警由 VictoriaMetrics 监控系统自动发送</p>
+            <p>Grafana 仪表板: <a href="http://your-grafana-url:3000">http://your-grafana-url:3000</a></p>
+            <p>Alertmanager: <a href="http://your-alertmanager:9093">http://your-alertmanager:9093</a></p>
+        </div>
+    </div>
+</body>
+</html>
+{{ end }}
+
+{{ define "email.critical.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background: #ffe6e6; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; background: white; box-shadow: 0 0 20px rgba(231,76,60,0.3); }
+        .header { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; padding: 30px; text-align: center; border-radius: 5px 5px 0 0; }
+        .urgent-badge { background: #fff; color: #e74c3c; padding: 5px 15px; border-radius: 20px; font-weight: bold; display: inline-block; margin-top: 10px; }
+        .alert-box { background: #fff5f5; border: 2px solid #e74c3c; padding: 20px; margin: 20px 0; border-radius: 5px; }
+        .action-required { background: #ffe6e6; padding: 15px; margin: 15px 0; border-left: 5px solid #e74c3c; }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e74c3c; }
+        th { background: #e74c3c; color: white; }
+        .footer { text-align: center; color: #7f8c8d; padding: 20px; font-size: 12px; border-top: 2px solid #e74c3c; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚨 严重告警 - 需要立即处理</h1>
+            <span class="urgent-badge">CRITICAL</span>
+            <p style="margin-top: 15px; font-size: 18px;">{{ .GroupLabels.alertname }}</p>
+        </div>
+
+        {{ range .Alerts }}
+        <div class="alert-box">
+            <h2 style="color: #e74c3c; margin-top: 0;">{{ .Annotations.summary }}</h2>
+            <p><strong>问题描述：</strong>{{ .Annotations.description }}</p>
+
+            <div class="action-required">
+                <h3 style="margin-top: 0;">⚡ 需要立即采取的行动:</h3>
+                <ol>
+                    <li>登录受影响的系统进行检查</li>
+                    <li>查看相关监控仪表板确认影响范围</li>
+                    <li>通知相关团队负责人</li>
+                    <li>记录故障处理过程</li>
+                </ol>
+            </div>
+
+            <table>
+                <tr>
+                    <th colspan="2" style="background: #c0392b;">告警详细信息</th>
+                </tr>
+                <tr>
+                    <td><strong>告警名称</strong></td>
+                    <td>{{ .Labels.alertname }}</td>
+                </tr>
+                <tr>
+                    <td><strong>级别</strong></td>
+                    <td style="color: #e74c3c; font-weight: bold;">{{ .Labels.severity | toUpper }}</td>
+                </tr>
+                <tr>
+                    <td><strong>受影响实例</strong></td>
+                    <td>{{ .Labels.instance }}</td>
+                </tr>
+                {{ if .Labels.datacenter }}
+                <tr>
+                    <td><strong>数据中心</strong></td>
+                    <td>{{ .Labels.datacenter }}</td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.cluster }}
+                <tr>
+                    <td><strong>集群</strong></td>
+                    <td>{{ .Labels.cluster }}</td>
+                </tr>
+                {{ end }}
+                <tr>
+                    <td><strong>触发时间</strong></td>
+                    <td>{{ .StartsAt.Format "2006-01-02 15:04:05" }}</td>
+                </tr>
+                <tr>
+                    <td><strong>持续时长</strong></td>
+                    <td>{{ .StartsAt.Until now }}</td>
+                </tr>
+            </table>
+
+            {{ if .GeneratorURL }}
+            <p style="text-align: center; margin-top: 20px;">
+                <a href="{{ .GeneratorURL }}" style="background: #e74c3c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                    查看监控详情 →
+                </a>
+            </p>
+            {{ end }}
+        </div>
+        {{ end }}
+
+        <div class="footer">
+            <p><strong>⚠️ 这是一封严重告警邮件，请立即处理！</strong></p>
+            <p>如有疑问，请联系监控系统管理员</p>
+        </div>
+    </div>
+</body>
+</html>
+{{ end }}
+
+{{ define "email.vmware.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .header { background: #607d8b; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .vm-info { background: #eceff1; padding: 15px; margin: 15px 0; border-left: 4px solid #607d8b; }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #bdc3c7; }
+        th { background: #546e7a; color: white; }
+        .footer { text-align: center; color: #7f8c8d; padding: 20px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🖥️ VMware 虚拟化环境告警</h1>
+            <p>{{ .GroupLabels.alertname }}</p>
+        </div>
+
+        {{ range .Alerts }}
+        <div class="vm-info">
+            <h2>{{ .Annotations.summary }}</h2>
+            <p>{{ .Annotations.description }}</p>
+
+            <table>
+                <tr>
+                    <th>项目</th>
+                    <th>值</th>
+                </tr>
+                {{ if .Labels.vm_name }}
+                <tr>
+                    <td>虚拟机名称</td>
+                    <td><strong>{{ .Labels.vm_name }}</strong></td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.host_name }}
+                <tr>
+                    <td>ESXi 主机</td>
+                    <td>{{ .Labels.host_name }}</td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.ds_name }}
+                <tr>
+                    <td>数据存储</td>
+                    <td>{{ .Labels.ds_name }}</td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.datacenter }}
+                <tr>
+                    <td>vCenter 数据中心</td>
+                    <td>{{ .Labels.datacenter }}</td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.cluster }}
+                <tr>
+                    <td>集群</td>
+                    <td>{{ .Labels.cluster }}</td>
+                </tr>
+                {{ end }}
+                <tr>
+                    <td>告警级别</td>
+                    <td>{{ .Labels.severity }}</td>
+                </tr>
+                <tr>
+                    <td>触发时间</td>
+                    <td>{{ .StartsAt.Format "2006-01-02 15:04:05" }}</td>
+                </tr>
+            </table>
+
+            {{ if .GeneratorURL }}
+            <p><a href="{{ .GeneratorURL }}">查看 vmalert 详情 →</a></p>
+            {{ end }}
+        </div>
+        {{ end }}
+
+        <div class="footer">
+            <p>VMware 监控告警 - VictoriaMetrics 系统</p>
+        </div>
+    </div>
+</body>
+</html>
+{{ end }}
+
+{{ define "email.network.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .header { background: #00796b; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .network-info { background: #e0f2f1; padding: 15px; margin: 15px 0; border-left: 4px solid #00796b; }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #b2dfdb; }
+        th { background: #00897b; color: white; }
+        .footer { text-align: center; color: #7f8c8d; padding: 20px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 网络设备告警</h1>
+            <p>{{ .GroupLabels.alertname }}</p>
+        </div>
+
+        {{ range .Alerts }}
+        <div class="network-info">
+            <h2>{{ .Annotations.summary }}</h2>
+            <p>{{ .Annotations.description }}</p>
+
+            <table>
+                <tr>
+                    <th>项目</th>
+                    <th>值</th>
+                </tr>
+                <tr>
+                    <td>设备地址</td>
+                    <td><strong>{{ .Labels.instance }}</strong></td>
+                </tr>
+                {{ if .Labels.switch_role }}
+                <tr>
+                    <td>交换机角色</td>
+                    <td>{{ .Labels.switch_role }}</td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.ifDescr }}
+                <tr>
+                    <td>接口</td>
+                    <td>{{ .Labels.ifDescr }}</td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.ifAlias }}
+                <tr>
+                    <td>接口描述</td>
+                    <td>{{ .Labels.ifAlias }}</td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.vendor }}
+                <tr>
+                    <td>设备厂商</td>
+                    <td>{{ .Labels.vendor }}</td>
+                </tr>
+                {{ end }}
+                {{ if .Labels.location }}
+                <tr>
+                    <td>位置</td>
+                    <td>{{ .Labels.location }}</td>
+                </tr>
+                {{ end }}
+                <tr>
+                    <td>告警级别</td>
+                    <td>{{ .Labels.severity }}</td>
+                </tr>
+                <tr>
+                    <td>触发时间</td>
+                    <td>{{ .StartsAt.Format "2006-01-02 15:04:05" }}</td>
+                </tr>
+            </table>
+        </div>
+        {{ end }}
+
+        <div class="footer">
+            <p>网络设备监控告警 - SNMP Exporter</p>
+        </div>
+    </div>
+</body>
+</html>
+{{ end }}
