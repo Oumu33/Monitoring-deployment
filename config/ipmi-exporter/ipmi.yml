@@ -1,0 +1,36 @@
+# ===================================================================
+# IPMI Exporter 配置文件
+# 作用: 监控不支持 Redfish 的老旧服务器（兜底方案）
+# 文档: https://github.com/prometheus-community/ipmi_exporter
+# ===================================================================
+
+# IPMI Exporter 主要通过 Prometheus 的 scrape_configs 配置
+# 本文件用于记录需要监控的老服务器信息
+
+# ===== 老服务器列表（不支持 Redfish）=====
+
+# 服务器示例:
+# - 主机名: old-server-01
+#   IPMI IP: 192.168.2.10
+#   用户名: ADMIN
+#   密码: ADMIN
+#   备注: Dell R710 (2010 年服务器，不支持 Redfish)
+
+# - 主机名: old-server-02
+#   IPMI IP: 192.168.2.11
+#   用户名: root
+#   密码: changeme
+#   备注: HP DL380 G6
+
+# ===================================================================
+# 使用说明:
+#
+# 1. IPMI 需要在 BIOS 中启用
+# 2. 需要配置独立的 IPMI 网络
+# 3. 认证信息配置在 prometheus.yml 中的 params 部分
+# 4. IPMI 协议较老，建议逐步迁移到 Redfish
+#
+# 5. 测试 IPMI 连接:
+#    ipmitool -I lanplus -H 192.168.2.10 -U ADMIN -P ADMIN sensor
+#
+# ===================================================================

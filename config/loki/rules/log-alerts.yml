@@ -1,0 +1,218 @@
+# ===================================================================
+# Loki 告警规则 - 日志告警
+# 用途: 基于日志内容触发告警
+# 文档: https://grafana.com/docs/loki/latest/rules/
+# ===================================================================
+
+groups:
+  - name: log_alerts
+    interval: 1m
+    rules:
+
+      # ===== 系统级别告警 =====
+
+      # 认证失败（暴力破解检测）
+      - alert: TooManySSHFailures
+        expr: |
+          sum by (host, user, ip) (
+            count_over_time({job="auth"} |~ "Failed password" [5m])
+          ) > 5
+        for: 1m
+        labels:
+          severity: warning
+          category: security
+          priority: P1
+        annotations:
+          summary: "SSH 登录失败过多: {{ $labels.host }}"
+          description: "用户 {{ $labels.user }} 从 {{ $labels.ip }} 在 5 分钟内失败 {{ $value }} 次"
+
+      # OOM Killer触发
+      - alert: OOMKillerTriggered
+        expr: |
+          count_over_time({job="syslog"} |~ "Out of memory|oom-killer|OOM" [5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: system
+          priority: P0
+        annotations:
+          summary: "内存不足触发 OOM Killer: {{ $labels.host }}"
+          description: "系统内存不足，OOM Killer 已杀死进程"
+
+      # 磁盘 I/O 错误
+      - alert: DiskIOErrors
+        expr: |
+          count_over_time({job="syslog"} |~ "I/O error|Buffer I/O error|EXT4-fs error" [5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: hardware
+          priority: P0
+        annotations:
+          summary: "磁盘 I/O 错误: {{ $labels.host }}"
+          description: "检测到磁盘 I/O 错误，可能是硬盘故障"
+
+      # ===== 网络设备告警 =====
+
+      # 接口 Down
+      - alert: NetworkInterfaceDown
+        expr: |
+          count_over_time({job="syslog", source="network-devices"} |~ "Interface.*down|link down|down, line protocol" [2m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          category: network
+          priority: P1
+        annotations:
+          summary: "网络接口 Down: {{ $labels.host }}"
+          description: "设备 {{ $labels.host }} 检测到接口 Down 事件"
+
+      # BGP 邻居 Down
+      - alert: BGPNeighborDown
+        expr: |
+          count_over_time({job="syslog", source="network-devices"} |~ "BGP.*down|neighbor.*down|BGP.*NOTIFICATION" [2m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: network
+          priority: P0
+        annotations:
+          summary: "BGP 邻居 Down: {{ $labels.host }}"
+          description: "设备 {{ $labels.host }} BGP 邻居断开"
+
+      # OSPF 邻接关系变化
+      - alert: OSPFNeighborChange
+        expr: |
+          count_over_time({job="syslog", source="network-devices"} |~ "OSPF.*down|OSPF.*change" [5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          category: network
+          priority: P1
+        annotations:
+          summary: "OSPF 邻接关系变化: {{ $labels.host }}"
+          description: "设备 {{ $labels.host }} OSPF 邻接关系发生变化"
+
+      # 交换机风暴控制
+      - alert: SwitchTrafficStorm
+        expr: |
+          count_over_time({job="syslog", source="network-devices"} |~ "storm|broadcast storm|multicast storm|unicast storm" [2m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: network
+          priority: P0
+        annotations:
+          summary: "交换机流量风暴: {{ $labels.host }}"
+          description: "设备 {{ $labels.host }} 检测到流量风暴"
+
+      # STP 拓扑变化
+      - alert: STPTopologyChange
+        expr: |
+          count_over_time({job="syslog", source="network-devices"} |~ "STP.*topology|SPANNING.*change" [5m]) > 3
+        for: 1m
+        labels:
+          severity: warning
+          category: network
+          priority: P1
+        annotations:
+          summary: "STP 拓扑频繁变化: {{ $labels.host }}"
+          description: "设备 {{ $labels.host }} STP 拓扑在 5 分钟内变化 {{ $value }} 次，可能存在环路"
+
+      # ===== 应用级别告警 =====
+
+      # Nginx 5xx 错误率高
+      - alert: NginxHighErrorRate
+        expr: |
+          sum by (host) (
+            rate({job="nginx", log_type="access"} |~ ` 5\d{2} ` [5m])
+          ) > 10
+        for: 2m
+        labels:
+          severity: warning
+          category: application
+          priority: P1
+        annotations:
+          summary: "Nginx 5xx 错误率高: {{ $labels.host }}"
+          description: "Nginx 5xx 错误率: {{ $value }} req/s"
+
+      # Nginx 4xx 错误率高
+      - alert: NginxHighClientErrorRate
+        expr: |
+          sum by (host) (
+            rate({job="nginx", log_type="access"} |~ ` 4\d{2} ` [5m])
+          ) > 50
+        for: 5m
+        labels:
+          severity: info
+          category: application
+          priority: P2
+        annotations:
+          summary: "Nginx 4xx 错误率高: {{ $labels.host }}"
+          description: "Nginx 4xx 错误率: {{ $value }} req/s"
+
+      # Docker 容器异常退出
+      - alert: DockerContainerCrash
+        expr: |
+          count_over_time({job="docker"} |~ "error|fatal|panic|crashed" [5m]) > 3
+        for: 1m
+        labels:
+          severity: warning
+          category: container
+          priority: P1
+        annotations:
+          summary: "Docker 容器异常: {{ $labels.container_id }}"
+          description: "容器在 5 分钟内出现 {{ $value }} 次错误"
+
+      # ===== 安全告警 =====
+
+      # 可疑的 SQL 注入尝试
+      - alert: SuspiciousSQLInjection
+        expr: |
+          count_over_time({job="nginx"} |~ "(?i)(union.*select|insert.*into|delete.*from|drop.*table)" [5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+          priority: P0
+        annotations:
+          summary: "检测到 SQL 注入尝试"
+          description: "在 Nginx 日志中检测到疑似 SQL 注入攻击"
+
+      # 可疑的路径遍历
+      - alert: SuspiciousPathTraversal
+        expr: |
+          count_over_time({job="nginx"} |~ "\\.\\./|%2e%2e%2f" [5m]) > 5
+        for: 1m
+        labels:
+          severity: warning
+          category: security
+          priority: P1
+        annotations:
+          summary: "检测到路径遍历尝试"
+          description: "在 5 分钟内检测到 {{ $value }} 次路径遍历尝试"
+
+# ===================================================================
+# LogQL 查询语法说明:
+#
+# 1. 基本过滤:
+#    {job="syslog"}                    # 选择 job 标签
+#    {job="syslog"} |~ "error"         # 包含 "error"
+#    {job="syslog"} !~ "debug"         # 不包含 "debug"
+#
+# 2. 聚合函数:
+#    count_over_time([5m])             # 5 分钟内的日志条数
+#    rate([5m])                        # 每秒速率
+#    sum by (host) (...)               # 按 host 聚合
+#
+# 3. 正则表达式:
+#    |~ "pattern"                      # 包含正则
+#    !~ "pattern"                      # 不包含正则
+#    |= "exact"                        # 精确匹配（更快）
+#
+# 4. 时间窗口:
+#    [5m]  # 5 分钟
+#    [1h]  # 1 小时
+#    [1d]  # 1 天
+#
+# ===================================================================

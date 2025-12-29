@@ -139,6 +139,22 @@ services:
     networks:
       - monitoring
 
+  # Telegraf gNMI - 网络设备流式遥测监控
+  telegraf-gnmi:
+    image: telegraf:latest
+    container_name: telegraf-gnmi
+    depends_on:
+      - victoriametrics
+    volumes:
+      - ./config/telegraf-gnmi/telegraf-gnmi.conf:/etc/telegraf/telegraf.conf:ro
+    env_file:
+      - ./config/telegraf-gnmi/.env.gnmi  # gNMI 认证信息
+    restart: unless-stopped
+    networks:
+      - monitoring
+    # 可选: 如果需要访问设备管理网络
+    # network_mode: host
+
   # Blackbox Exporter - 服务可用性探测
   blackbox-exporter:
     image: prom/blackbox-exporter:latest
@@ -153,11 +169,105 @@ services:
     networks:
       - monitoring
 
+  # Redfish Exporter - 服务器硬件监控（统一方案）
+  redfish-exporter:
+    image: jenningsloy318/redfish_exporter:latest
+    container_name: redfish-exporter
+    ports:
+      - "9610:9610"
+    volumes:
+      - ./config/redfish-exporter/redfish.yml:/etc/redfish_exporter/redfish.yml:ro
+    command:
+      - "--config.file=/etc/redfish_exporter/redfish.yml"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # IPMI Exporter - 老服务器硬件监控（兜底方案）
+  ipmi-exporter:
+    image: prometheuscommunity/ipmi-exporter:latest
+    container_name: ipmi-exporter
+    ports:
+      - "9290:9290"
+    restart: unless-stopped
+    networks:
+      - monitoring
+    # IPMI 需要访问主机网络来发送 IPMI 命令
+    # 如果遇到连接问题，可以尝试使用 host 网络模式
+    # network_mode: host
+
+  # Loki - 日志聚合存储
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./config/loki/loki.yml:/etc/loki/loki.yml:ro
+      - ./config/loki/rules:/loki/rules:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/loki.yml
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # Promtail - 日志采集（主机日志）
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    depends_on:
+      - loki
+    volumes:
+      - ./config/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - ./config/promtail/promtail-network.yml:/etc/promtail/promtail-network.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - network-device-logs:/var/log/network-devices:ro
+    command: -config.file=/etc/promtail/promtail.yml -config.expand-env=true
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # Syslog-NG - 接收网络设备 Syslog
+  syslog-ng:
+    image: balabit/syslog-ng:latest
+    container_name: syslog-ng
+    ports:
+      - "514:514/udp"   # Syslog UDP
+      - "514:514/tcp"   # Syslog TCP
+      - "6514:6514/udp" # Cisco 常用端口
+    volumes:
+      - ./config/syslog-ng/syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf:ro
+      - network-device-logs:/var/log/network-devices
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # Topology Discovery - LLDP 拓扑自动发现
+  topology-discovery:
+    build:
+      context: .
+      dockerfile: Dockerfile.topology
+    container_name: topology-discovery
+    volumes:
+      - ./config/topology/devices.yml:/etc/topology/devices.yml:ro
+      - ./scripts/topology:/scripts:ro
+      - ./data/topology:/data/topology
+      - ./config/vmagent/targets:/etc/prometheus/targets
+    environment:
+      - DISCOVERY_INTERVAL=300  # 每 5 分钟发现一次
+    command: /bin/bash /scripts/run_discovery.sh
+    restart: unless-stopped
+    networks:
+      - monitoring
+
 volumes:
   vmdata:
   vmagentdata:
   grafana-data:
   alertmanager-data:
+  loki-data:
+  network-device-logs:
 
 networks:
   monitoring:

@@ -1,0 +1,212 @@
+# ===================================================================
+# Promtail 配置文件
+# 用途: 采集主机日志并发送到 Loki
+# 文档: https://grafana.com/docs/loki/latest/clients/promtail/configuration/
+# ===================================================================
+
+# HTTP 服务配置
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: info
+
+# Loki 服务端地址
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    # 批量发送配置
+    batchwait: 1s      # 等待 1 秒后发送
+    batchsize: 1048576 # 批量大小 1MB
+
+    # 外部标签（所有日志都会带上）
+    external_labels:
+      cluster: 'monitoring-cluster'
+      environment: 'production'
+
+# 位置信息（记录读取进度）
+positions:
+  filename: /tmp/positions.yaml
+
+# 日志抓取配置
+scrape_configs:
+
+  # ===== 1. 系统日志 (Syslog) =====
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: syslog
+          host: monitoring-host
+          __path__: /var/log/syslog
+
+      - targets:
+          - localhost
+        labels:
+          job: syslog
+          host: monitoring-host
+          __path__: /var/log/messages
+
+    # 日志解析 Pipeline
+    pipeline_stages:
+      # 正则提取字段
+      - regex:
+          expression: '^(?P<timestamp>\w+\s+\d+\s+\d+:\d+:\d+)\s+(?P<hostname>\S+)\s+(?P<process>\S+?)(\[(?P<pid>\d+)\])?:\s+(?P<message>.*)$'
+
+      # 提取的字段作为标签
+      - labels:
+          hostname:
+          process:
+
+      # 时间戳解析
+      - timestamp:
+          source: timestamp
+          format: 'Jan 02 15:04:05'
+
+  # ===== 2. 系统认证日志 =====
+  - job_name: auth
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: auth
+          host: monitoring-host
+          __path__: /var/log/auth.log
+
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\w+\s+\d+\s+\d+:\d+:\d+).*?(?P<event>(Failed password|Accepted publickey|session opened|session closed)).*?for\s+(?P<user>\S+).*?from\s+(?P<ip>\S+)'
+      - labels:
+          user:
+          ip:
+          event:
+
+  # ===== 3. Docker 容器日志 =====
+  - job_name: docker
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          host: monitoring-host
+          __path__: /var/lib/docker/containers/*/*.log
+
+    pipeline_stages:
+      # Docker JSON 日志格式解析
+      - json:
+          expressions:
+            stream: stream
+            log: log
+            time: time
+
+      # 提取容器 ID
+      - regex:
+          source: filename
+          expression: '/var/lib/docker/containers/(?P<container_id>[0-9a-f]{64})'
+
+      - labels:
+          container_id:
+          stream:
+
+      - timestamp:
+          source: time
+          format: RFC3339Nano
+
+  # ===== 4. Nginx 访问日志 =====
+  - job_name: nginx-access
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx
+          log_type: access
+          __path__: /var/log/nginx/access.log
+
+    pipeline_stages:
+      # Nginx 日志格式: combined
+      - regex:
+          expression: '^(?P<remote_ip>\S+) - (?P<remote_user>\S+) \[(?P<time>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>\S+)" (?P<status>\d+) (?P<size>\d+) "(?P<referer>[^"]*)" "(?P<user_agent>[^"]*)"'
+
+      - labels:
+          method:
+          status:
+
+      # 仅保留 HTTP 错误（4xx, 5xx）
+      - match:
+          selector: '{job="nginx"} |~ "\" [45]\\d{2} "'
+          stages:
+            - labels:
+                error: "true"
+
+  # ===== 5. Nginx 错误日志 =====
+  - job_name: nginx-error
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx
+          log_type: error
+          __path__: /var/log/nginx/error.log
+
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<time>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>\w+)\] (?P<message>.*)$'
+      - labels:
+          level:
+
+  # ===== 6. 应用日志（JSON 格式）=====
+  # - job_name: application
+  #   static_configs:
+  #     - targets:
+  #         - localhost
+  #       labels:
+  #         job: app
+  #         app: myapp
+  #         __path__: /var/log/myapp/*.log
+  #
+  #   pipeline_stages:
+  #     - json:
+  #         expressions:
+  #           level: level
+  #           message: message
+  #           timestamp: timestamp
+  #           trace_id: trace_id   # 如果有 Trace ID
+  #
+  #     - labels:
+  #         level:
+  #
+  #     - timestamp:
+  #         source: timestamp
+  #         format: RFC3339
+
+  # ===== 7. MySQL 慢查询日志 =====
+  # - job_name: mysql-slow
+  #   static_configs:
+  #     - targets:
+  #         - localhost
+  #       labels:
+  #         job: mysql
+  #         log_type: slow_query
+  #         __path__: /var/log/mysql/slow-query.log
+  #
+  #   pipeline_stages:
+  #     - multiline:
+  #         firstline: '^# Time:'
+  #         max_wait_time: 3s
+
+# ===================================================================
+# Pipeline Stages 说明:
+#
+# 1. regex: 正则提取字段
+# 2. json: 解析 JSON 日志
+# 3. labels: 将字段提升为 Loki 标签（用于索引和过滤）
+# 4. timestamp: 解析时间戳
+# 5. match: 条件匹配（过滤日志）
+# 6. multiline: 多行日志合并
+# 7. drop: 丢弃不需要的日志
+#
+# 标签策略:
+# - 高基数字段（user_id, request_id）不要作为标签
+# - 低基数字段（level, host, job）适合作为标签
+# - 过多标签会影响性能
+#
+# ===================================================================

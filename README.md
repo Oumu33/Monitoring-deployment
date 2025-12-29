@@ -35,8 +35,11 @@
 ### 数据采集组件
 - **Node Exporter**: Linux 主机指标采集（CPU、内存、磁盘、网络）
 - **Telegraf**: VMware vSphere 环境监控（单实例支持多 vCenter）
-- **SNMP Exporter**: 网络设备监控（交换机、路由器）
+- **SNMP Exporter**: 网络设备监控（交换机、路由器 - 传统）
+- **Telegraf gNMI**: 网络设备监控（支持 gNMI 的新设备 - 流式遥测）
 - **Blackbox Exporter**: 服务可用性探测（HTTP、ICMP、TCP、DNS）
+- **Redfish Exporter**: 服务器硬件监控（Dell iDRAC、HPE iLO 等）
+- **IPMI Exporter**: 老服务器硬件监控（兜底方案）
 
 ## 监控覆盖
 
@@ -44,9 +47,13 @@
 |---------|---------|---------|
 | 🖥️ 主机监控 | CPU、内存、磁盘、网络、进程 | Node Exporter |
 | ☁️ 虚拟化监控 | VM、ESXi、数据存储、集群 | Telegraf |
-| 🌐 网络监控 | 交换机、路由器、端口、流量 | SNMP Exporter |
+| 🌐 网络监控（传统）| 交换机、路由器、端口、流量 | SNMP Exporter |
+| 🌐 网络监控（现代）| 交换机、路由器、实时遥测 | Telegraf gNMI |
 | 🔍 服务监控 | 网站可用性、API健康、SSL证书 | Blackbox Exporter |
 | 📡 连通性监控 | Ping、端口探测、响应时间 | Blackbox Exporter |
+| 🔧 硬件监控 | 温度、风扇、电源、RAID、硬盘健康 | Redfish + IPMI Exporter |
+| 📝 日志监控 | 系统日志、网络设备日志、应用日志 | Loki + Promtail + Syslog-NG |
+| 🗺️ 拓扑发现 | LLDP 自动拓扑、网络层级、设备关系 | Topology Discovery (自动化) |
 
 ## 前置要求
 
@@ -169,12 +176,15 @@ docker-compose ps
 ## 访问地址
 
 - **Grafana**: http://localhost:3000 (默认账号: admin/admin)
+- **Loki**: http://localhost:3100
 - **VictoriaMetrics**: http://localhost:8428
 - **vmalert**: http://localhost:8880
 - **Alertmanager**: http://localhost:9093
 - **Node Exporter**: http://localhost:9100/metrics
 - **SNMP Exporter**: http://localhost:9116/metrics
 - **Blackbox Exporter**: http://localhost:9115/metrics
+- **Redfish Exporter**: http://localhost:9610/metrics
+- **IPMI Exporter**: http://localhost:9290/metrics
 
 ## 监控目标配置
 
@@ -234,6 +244,89 @@ docker run -d \
 
 详细配置请参考: [config/snmp-exporter/README.md](config/snmp-exporter/README.md)
 
+### 网络设备监控（gNMI - 流式遥测）
+
+gNMI（gRPC Network Management Interface）是新一代网络设备监控协议，采用**流式推送**方式，相比 SNMP 具有更高的实时性和效率。
+
+**适用设备**:
+- Cisco IOS-XR、NX-OS（2018+）
+- Arista EOS
+- Juniper Junos
+- Huawei CloudEngine（新款）
+
+**核心优势**:
+- ✅ **实时推送**: 秒级数据更新（vs SNMP 30-60秒轮询）
+- ✅ **标准化**: OpenConfig YANG 模型统一所有厂商
+- ✅ **高效**: Protocol Buffers 比 SNMP 编码效率高 3-10 倍
+- ✅ **安全**: 基于 gRPC + TLS
+
+**配置步骤**:
+
+1. **检测设备支持**
+
+```bash
+./scripts/test-gnmi-device.sh \
+  -h 192.168.1.100 \
+  -p 57400 \
+  -u admin \
+  -P password
+```
+
+2. **配置认证信息**
+
+```bash
+cd config/telegraf-gnmi
+cp .env.gnmi.example .env.gnmi
+vim .env.gnmi  # 编辑用户名密码
+```
+
+3. **配置监控目标**
+
+编辑 `config/telegraf-gnmi/telegraf-gnmi.conf`:
+
+```toml
+[[inputs.gnmi]]
+  addresses = ["192.168.1.100:57400"]  # Cisco 设备
+  username = "${GNMI_USERNAME}"
+  password = "${GNMI_PASSWORD}"
+
+  # 订阅接口流量
+  [[inputs.gnmi.subscription]]
+    name = "interface_counters"
+    path = "/interfaces/interface/state/counters"
+    subscription_mode = "sample"
+    sample_interval = "10s"
+```
+
+4. **启动服务**
+
+```bash
+docker-compose up -d telegraf-gnmi
+```
+
+**监控能力**:
+- ✅ 接口流量实时监控（秒级更新）
+- ✅ 接口状态变化即时推送
+- ✅ CPU/内存实时监控
+- ✅ BGP/OSPF 协议状态
+- ✅ 光模块温度和功率
+
+**SNMP vs gNMI 对比**:
+
+| 特性 | SNMP | gNMI |
+|------|------|------|
+| 采集方式 | 轮询（Poll） | 推送（Subscribe） |
+| 实时性 | 30-60秒 | 秒级/毫秒级 |
+| 数据模型 | MIB（厂商各异） | YANG（统一标准） |
+| 网络开销 | 高 | 低 |
+| 设备支持 | 所有设备 | 2018+ 新设备 |
+
+**推荐策略**: **SNMP + gNMI 混合架构**
+- 新设备使用 gNMI（高性能、实时）
+- 老设备继续用 SNMP（兼容性）
+
+详细配置请参考: [docs/GNMI-MONITORING.md](docs/GNMI-MONITORING.md)
+
 ### Blackbox 服务可用性监控
 
 Blackbox Exporter 用于监控服务可用性和网络连通性。
@@ -280,6 +373,302 @@ Blackbox Exporter 用于监控服务可用性和网络连通性。
 - ✅ 服务端口可用性
 
 详细配置请参考: [examples/blackbox-monitoring-examples.yml](examples/blackbox-monitoring-examples.yml)
+
+### 服务器硬件监控
+
+使用 **Redfish + IPMI 双轨制**监控物理服务器硬件健康：
+
+**监控方案**:
+- **Redfish Exporter**: 统一监控支持 Redfish 的新服务器（推荐）
+  - Dell iDRAC 9+
+  - HPE iLO 4/5/6
+  - Supermicro（新款）
+  - Lenovo XClarity
+
+- **IPMI Exporter**: 兜底监控老服务器
+  - 不支持 Redfish 的旧设备
+  - 2012 年之前的服务器
+
+**配置步骤**:
+
+1. **配置 Redfish 监控**（新服务器）
+
+编辑 `config/redfish-exporter/redfish.yml`:
+
+```yaml
+hosts:
+  dell-server-01:
+    username: "root"
+    password: "calvin"              # 修改为实际密码
+    host_address: "192.168.1.100"   # iDRAC IP 地址
+```
+
+在 `config/vmagent/prometheus.yml` 中添加目标:
+
+```yaml
+- job_name: 'redfish-hardware'
+  static_configs:
+    - targets:
+      - dell-server-01              # 对应 redfish.yml 中的主机名
+```
+
+2. **配置 IPMI 监控**（老服务器）
+
+在 `config/vmagent/prometheus.yml` 中添加:
+
+```yaml
+- job_name: 'ipmi-hardware'
+  static_configs:
+    - targets: ['192.168.2.10']     # IPMI IP 地址
+      labels:
+        instance: 'old-server-01'
+```
+
+**监控能力**:
+- ✅ CPU/主板温度监控
+- ✅ 风扇转速和状态
+- ✅ 电源状态（冗余电源）
+- ✅ RAID 控制器健康
+- ✅ 硬盘 SMART 数据
+- ✅ 内存 ECC 错误
+- ✅ 硬件事件日志
+
+详细配置请参考: [docs/HARDWARE-MONITORING.md](docs/HARDWARE-MONITORING.md)
+
+## 日志聚合和可观测性
+
+本系统实现了完整的**基础设施可观测性**架构：**Metrics（指标）+ Logs（日志）+ Topology（拓扑）**，实现自动根因分析和智能告警。
+
+### 架构特点
+
+- ✅ **Metrics**: VictoriaMetrics 采集所有指标（CPU、网络、硬件等）
+- ✅ **Logs**: Loki 聚合所有日志（系统日志、网络设备日志、应用日志）
+- ✅ **拓扑依赖**: 通过标签（datacenter、network_segment、rack）建立关联
+- ✅ **自动根因分析**: Alertmanager 智能抑制连锁告警，只发送根因告警
+- ✅ **统一视图**: Grafana 关联展示 Metrics 和 Logs
+
+### 日志采集
+
+**1. 主机日志**（Promtail 采集）:
+- 系统日志（Syslog）
+- 认证日志（SSH 登录）
+- Docker 容器日志
+- Nginx 访问/错误日志
+- 应用日志（JSON 格式）
+
+**2. 网络设备日志**（Syslog-NG 接收）:
+- Cisco、Arista、Juniper 等网络设备
+- 交换机、路由器 Syslog
+- 支持 UDP/TCP 514、6514 端口
+
+### 配置步骤
+
+**1. 启动日志服务**
+
+```bash
+docker-compose up -d loki promtail syslog-ng
+```
+
+**2. 配置网络设备发送 Syslog**
+
+**Cisco**:
+```
+logging host 192.168.1.X
+logging trap informational
+```
+
+**Arista**:
+```
+logging host 192.168.1.X
+logging level informational
+```
+
+**3. 在 Grafana 中查询日志**
+
+Loki 数据源已自动配置，使用 LogQL 查询：
+
+```logql
+# 查看所有网络设备日志
+{job="syslog", source="network-devices"}
+
+# 接口 Down 事件
+{job="syslog"} |~ "Interface.*down|link down"
+
+# BGP 邻居问题
+{job="syslog"} |~ "BGP.*down"
+
+# SSH 登录失败
+{job="auth"} |~ "Failed password"
+```
+
+### 根因分析示例
+
+**场景**: 网站访问缓慢
+
+**传统方式**（7 个告警邮件）:
+1. WebsiteSlow (www.company.com)
+2. WebsiteSlow (api.company.com)
+3. NetworkLatency (ESXi-Host-01)
+4. NetworkLatency (ESXi-Host-02)
+5. SwitchCPUHigh (Switch-Core-01)
+6. SwitchTrafficStorm (Switch-Core-01) ← 根因
+7. ...
+
+运维人员需要手动排查 30 分钟。
+
+**可观测性方式**（1 个智能告警）:
+
+```
+Subject: 🚨 Critical: 核心交换机流量风暴
+
+根因: Switch-Core-01 Eth1/1 流量风暴
+影响: 3 个服务、2 台 ESXi 主机
+建议: 检查 Eth1/1 连接设备，可能是 DDoS 或环路
+
+详细信息:
+  - Metrics: CPU 98%
+  - Logs: Unicast storm detected on Eth1/1
+  - 拓扑: 影响 network-seg-core-01 整个网段
+
+Grafana: http://grafana/d/network-overview
+Loki Logs: {host="Switch-Core-01"} [17:00:00]
+```
+
+运维人员 1 分钟定位根因，10 分钟解决问题。
+
+### Metrics + Logs 关联查询
+
+在 Grafana Dashboard 中：
+
+**Panel 1**: Metrics - 网站响应时间
+```promql
+probe_http_duration_seconds{instance="www.company.com"}
+```
+
+**Panel 2**: Logs - 同一时间段的网络日志
+```logql
+{job="syslog", source="network-devices"} |~ "error|critical"
+```
+
+点击时间点，所有视图联动，快速定位问题。
+
+详细配置请参考: [docs/OBSERVABILITY-GUIDE.md](docs/OBSERVABILITY-GUIDE.md)
+
+## 拓扑自动发现（LLDP）
+
+**完全自动化**的网络拓扑发现系统，无需手动维护 CMDB！
+
+### 功能特性
+
+- ✅ **LLDP 自动采集**: 每 5 分钟自动采集所有网络设备的邻居信息
+- ✅ **拓扑关系生成**: 自动构建设备连接关系图
+- ✅ **层级自动计算**: 根据连接数量判断核心/汇聚/接入层级
+- ✅ **标签自动化**: 自动为每个设备生成拓扑标签（connected_switch、device_tier 等）
+- ✅ **可视化**: Grafana Node Graph 自动渲染网络拓扑图
+- ✅ **告警关联**: 标签自动用于 Alertmanager 根因分析
+
+### 架构
+
+```
+网络设备 (LLDP)
+    ↓ SNMP
+Topology Discovery 容器
+    ├→ 采集 LLDP 邻居
+    ├→ 生成拓扑图
+    ├→ 自动计算层级
+    └→ 更新 Prometheus 标签
+        ↓
+VictoriaMetrics (带拓扑标签的指标)
+        ↓
+Alertmanager (根据拓扑抑制连锁告警)
+        ↓
+Grafana (可视化拓扑图)
+```
+
+### 快速开始
+
+**1. 配置设备列表**
+
+编辑 `config/topology/devices.yml`:
+
+```yaml
+devices:
+  - name: Switch-Core-01
+    host: 192.168.1.100
+    type: switch
+    tier: core
+    vendor: cisco
+    snmp_community: public
+```
+
+**2. 启用设备 LLDP**
+
+```
+# Cisco
+lldp run
+snmp-server community public RO
+
+# Arista
+lldp run
+snmp-server community public ro
+```
+
+**3. 启动拓扑发现**
+
+```bash
+# 构建镜像
+docker-compose build topology-discovery
+
+# 启动服务
+docker-compose up -d topology-discovery
+
+# 查看发现的拓扑
+cat data/topology/topology.json
+```
+
+**4. 在 Grafana 查看拓扑图**
+
+1. 登录 Grafana
+2. 导入 Dashboard: `config/grafana/dashboards/network-topology.json`
+3. 查看自动生成的网络拓扑可视化
+
+### 自动生成的标签
+
+拓扑发现自动为每个设备添加标签：
+
+```json
+{
+  "device_name": "Server-01",
+  "device_tier": "access",
+  "connected_switch": "Switch-Access-01",
+  "connected_port": "Gi0/1",
+  "topology_discovered": "true"
+}
+```
+
+这些标签用于：
+- **Alertmanager**: 根据拓扑抑制连锁告警
+- **Grafana**: 可视化设备关系
+- **查询**: 快速定位影响范围
+
+### 根因分析示例
+
+**场景**: 核心交换机故障
+
+```
+传统方式:
+- 收到 20 个告警（交换机、服务器、服务...）
+- 手动排查 30 分钟找根因
+
+自动拓扑方式:
+- 系统检测到 Switch-Core-01 (tier=core) 故障
+- 自动抑制所有 tier=access 交换机告警
+- 自动抑制连接到这些交换机的服务器告警
+- 发送 1 封邮件: "核心交换机 Switch-Core-01 故障，影响 5 台接入交换机和 20 台服务器"
+- 1 分钟定位根因
+```
+
+详细配置请参考: [docs/TOPOLOGY-DISCOVERY.md](docs/TOPOLOGY-DISCOVERY.md)
 
 ## Grafana 仪表板
 
@@ -521,6 +910,11 @@ cadvisor:
 - [VMware Exporter 文档](https://github.com/pryorda/vmware_exporter)
 
 ### 本项目文档
+- [🚀 快速启动指南](QUICKSTART.md) - 5 分钟快速部署（从这里开始！）
+- [可观测性完整架构指南](docs/OBSERVABILITY-GUIDE.md) - Metrics + Logs + 根因分析（核心）
+- [LLDP 拓扑自动发现](docs/TOPOLOGY-DISCOVERY.md) - 自动拓扑发现 + 标签自动化（推荐）
+- [gNMI 网络监控指南](docs/GNMI-MONITORING.md) - 新一代流式遥测监控（推荐）
+- [服务器硬件监控指南](docs/HARDWARE-MONITORING.md) - Redfish + IPMI 硬件监控配置
 - [VMware 多集群监控方案对比](docs/VMWARE-SOLUTION-COMPARISON.md) - 选择最适合的 VMware 监控方案
 - [Telegraf 多 vCenter 监控指南](docs/TELEGRAF-VMWARE.md) - 单实例监控多个 vCenter
 - [多 VMware 实例部署](docs/VMWARE-MULTI-INSTANCE.md) - vmware-exporter 多容器部署

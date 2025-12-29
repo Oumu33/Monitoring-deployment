@@ -1,0 +1,23 @@
+# ===================================================================
+# Grafana Loki 数据源配置
+# 自动添加 Loki 数据源到 Grafana
+# ===================================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    version: 1
+    editable: true
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        # 从日志中提取 Trace ID（如果有的话）
+        - datasourceUid: tempo
+          matcherRegex: "trace_id=(\\w+)"
+          name: TraceID
+          url: "$${__value.raw}"

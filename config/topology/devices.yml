@@ -1,0 +1,82 @@
+# ===================================================================
+# 网络设备配置文件
+# 用途: LLDP 拓扑发现的设备列表
+# ===================================================================
+
+devices:
+  # ===== 核心交换机 =====
+  - name: Switch-Core-01
+    host: 192.168.1.100
+    type: switch
+    tier: core
+    vendor: cisco
+    location: dc1-rack-A01
+    snmp_community: public  # 生产环境使用强密码
+    snmp_port: 161
+
+  - name: Switch-Core-02
+    host: 192.168.1.101
+    type: switch
+    tier: core
+    vendor: cisco
+    location: dc1-rack-A02
+    snmp_community: public
+
+  # ===== 汇聚交换机 =====
+  # - name: Switch-Agg-01
+  #   host: 192.168.1.110
+  #   type: switch
+  #   tier: aggregation
+  #   vendor: arista
+  #   location: dc1-rack-B01
+  #   snmp_community: public
+
+  # ===== 接入交换机 =====
+  # - name: Switch-Access-01
+  #   host: 192.168.1.120
+  #   type: switch
+  #   tier: access
+  #   vendor: cisco
+  #   location: dc1-rack-C01
+  #   snmp_community: public
+
+  # ===== 路由器 =====
+  # - name: Router-Edge-01
+  #   host: 192.168.1.1
+  #   type: router
+  #   tier: core
+  #   vendor: juniper
+  #   location: dc1-rack-A01
+  #   snmp_community: public
+
+# ===================================================================
+# 配置说明:
+#
+# 必填字段:
+#   - name: 设备名称（唯一标识）
+#   - host: 设备 IP 地址
+#   - snmp_community: SNMP 团体字符串
+#
+# 可选字段:
+#   - type: 设备类型 (switch/router/firewall)
+#   - tier: 网络层级 (core/aggregation/access)
+#   - vendor: 厂商 (cisco/arista/juniper/huawei)
+#   - location: 物理位置 (数据中心-机架-U位)
+#   - snmp_port: SNMP 端口（默认 161）
+#
+# SNMP 配置:
+#   确保设备已启用 SNMP 和 LLDP:
+#
+#   Cisco:
+#     snmp-server community public RO
+#     lldp run
+#
+#   Arista:
+#     snmp-server community public ro
+#     lldp run
+#
+#   Juniper:
+#     set snmp community public authorization read-only
+#     set protocols lldp interface all
+#
+# ===================================================================

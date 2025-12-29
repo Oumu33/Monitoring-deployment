@@ -1,0 +1,23 @@
+# ===================================================================
+# 拓扑发现服务 Dockerfile
+# ===================================================================
+
+FROM python:3.11-slim
+
+# 安装依赖
+RUN pip install --no-cache-dir \
+    pysnmp \
+    pyyaml \
+    requests
+
+# 创建目录
+RUN mkdir -p /etc/topology /data/topology /scripts
+
+# 复制脚本
+COPY scripts/topology/lldp_discovery.py /scripts/
+
+# 设置工作目录
+WORKDIR /scripts
+
+# 运行脚本
+CMD ["python", "/scripts/lldp_discovery.py"]

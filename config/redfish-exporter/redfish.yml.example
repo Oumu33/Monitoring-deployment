@@ -1,0 +1,13 @@
+# Redfish Exporter 配置示例
+# 复制此文件为 redfish.yml 并填入实际设备信息
+
+hosts:
+  dell-server-01:
+    username: "root"
+    password: "calvin"              # 修改为实际密码
+    host_address: "192.168.1.100"   # iDRAC IP 地址
+
+  hpe-server-01:
+    username: "Administrator"
+    password: "your-password"       # 修改为实际密码
+    host_address: "192.168.1.101"   # iLO IP 地址

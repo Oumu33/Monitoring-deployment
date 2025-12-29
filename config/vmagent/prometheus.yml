@@ -315,6 +315,127 @@ scrape_configs:
           service: 'blackbox-exporter'
           component: 'prober'
 
+  # ===== 6. 服务器硬件监控 (Redfish + IPMI) =====
+  # 用途: 监控物理服务器硬件健康状态（温度、风扇、电源、RAID）
+  # 策略: Redfish（新服务器）+ IPMI（老服务器兜底）
+
+  # ===== 6. 服务器硬件监控 (Redfish + IPMI) =====
+  # 用途: 监控物理服务器硬件健康状态（温度、风扇、电源、RAID）
+  # 策略: Redfish（新服务器）+ IPMI（老服务器兜底）
+
+  # 6.1 Redfish 硬件监控（推荐 - 统一多厂商）
+  - job_name: 'redfish-hardware'
+    scrape_interval: 60s               # 硬件监控不需要太频繁
+    scrape_timeout: 30s                # Redfish API 可能较慢
+
+    # ===== 使用文件服务发现 + 拓扑标签 =====
+    file_sd_configs:
+      - files:
+        - /etc/prometheus/targets/topology-labels.json
+        refresh_interval: 60s          # 每分钟刷新拓扑标签
+
+    # Redfish Exporter 特殊配置
+    metrics_path: /redfish             # Redfish 探测路径
+
+    relabel_configs:
+      # 只采集标记为 Redfish 监控的设备
+      - source_labels: [__address__]
+        regex: '.*:9610'                # Redfish Exporter 端口
+        action: keep
+
+      # 将目标名称作为参数传递给 Redfish Exporter
+      - source_labels: [__address__]
+        target_label: __param_target   # 对应 redfish.yml 中的主机名
+      - source_labels: [__param_target]
+        target_label: instance         # 设置实例标签
+      - target_label: __address__
+        replacement: redfish-exporter:9610  # Redfish Exporter 地址
+
+  # 备用: 静态配置的 Redfish 目标
+  - job_name: 'redfish-hardware-static'
+    scrape_interval: 60s
+    scrape_timeout: 30s
+
+    static_configs:
+      - targets:
+        # 目标配置在 config/redfish-exporter/redfish.yml
+        # 这里列出所有在 redfish.yml 中配置的服务器名称
+        - dell-server-01               # 示例：Dell 服务器
+        # - dell-server-02
+        # - hpe-server-01              # 示例：HPE 服务器
+        # - supermicro-01              # 示例：Supermicro 服务器
+
+        labels:
+          exporter: 'redfish'
+          device_class: 'server'
+          monitoring_method: 'redfish'
+          priority: 'P0'               # 硬件故障高优先级
+
+    # Redfish Exporter 特殊配置
+    metrics_path: /redfish             # Redfish 探测路径
+
+    relabel_configs:
+      # 将目标名称作为参数传递给 Redfish Exporter
+      - source_labels: [__address__]
+        target_label: __param_target   # 对应 redfish.yml 中的主机名
+      - source_labels: [__param_target]
+        target_label: instance         # 设置实例标签
+      - target_label: __address__
+        replacement: redfish-exporter:9610  # Redfish Exporter 地址
+
+  # 6.2 IPMI 硬件监控（兜底方案 - 老服务器）
+  - job_name: 'ipmi-hardware'
+    scrape_interval: 60s
+    scrape_timeout: 30s
+
+    static_configs:
+      # 老服务器列表（不支持 Redfish 的）
+      # 需要在这里配置 IPMI 认证信息
+      # - targets: ['192.168.2.10']    # 老服务器 IPMI IP
+      #   labels:
+      #     instance: 'old-server-01'
+      #     device_class: 'server'
+      #     monitoring_method: 'ipmi'
+      #     priority: 'P1'
+
+      # - targets: ['192.168.2.11']
+      #   labels:
+      #     instance: 'old-server-02'
+      #     device_class: 'server'
+      #     monitoring_method: 'ipmi'
+      #     priority: 'P1'
+
+    # IPMI Exporter 特殊配置
+    metrics_path: /ipmi
+    params:
+      module: [default]                # IPMI 模块
+
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: ipmi-exporter:9290
+
+  # 6.3 Redfish Exporter 自监控
+  - job_name: 'redfish-exporter'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['redfish-exporter:9610']
+        labels:
+          service: 'redfish-exporter'
+          component: 'hardware-monitor'
+
+  # 6.4 IPMI Exporter 自监控
+  - job_name: 'ipmi-exporter'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['ipmi-exporter:9290']
+        labels:
+          service: 'ipmi-exporter'
+          component: 'hardware-monitor'
+
 # ===================================================================
 # 配置说明:
 #

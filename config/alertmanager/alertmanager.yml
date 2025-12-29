@@ -21,12 +21,12 @@ global:
 
 # ===== 告警路由配置 =====
 route:
-  # 告警分组策略
-  # 相同 alertname、instance 的告警会被聚合到一个通知中
-  group_by: ['alertname', 'instance', 'priority']
+  # 告警分组策略（可观测性优化版）
+  # 按照拓扑结构分组，自动关联相关告警
+  group_by: ['datacenter', 'network_segment', 'rack', 'alertname', 'priority']
 
   # 分组等待时间: 收到第一个告警后，等待 30 秒看是否有其他同组告警
-  # 目的: 避免短时间内发送多条通知
+  # 目的: 收集同一时间段的关联告警，便于根因分析
   group_wait: 30s
 
   # 分组间隔: 同一组告警发送后，至少等待 5 分钟才能再次发送
@@ -331,6 +331,87 @@ inhibit_rules:
     target_match_re:
       priority: '(P1|P2|P3)'
     equal: ['alertname', 'instance']
+
+  # ===== 根因分析抑制规则（可观测性增强）=====
+
+  # 规则 12: 核心交换机故障抑制接入交换机告警
+  # 原因: 核心交换机故障会导致下游交换机不可达
+  - source_match:
+      alertname: 'SwitchDown'
+      device_tier: 'core'
+    target_match:
+      alertname: 'SwitchDown'
+      device_tier: 'access'
+    equal: ['network_segment']
+
+  # 规则 13: 交换机 CPU 高抑制网络延迟告警
+  # 原因: 交换机 CPU 高是根因，网络延迟是结果
+  - source_match:
+      alertname: 'SwitchCPUHigh'
+      severity: 'critical'
+    target_match_re:
+      alertname: '(NetworkLatency|HighPing|PacketLoss)'
+    equal: ['network_segment']
+
+  # 规则 14: 交换机流量风暴抑制其他网络告警
+  # 原因: 流量风暴是根因，其他网络问题是连锁反应
+  - source_match_re:
+      alertname: '(TrafficStorm|BroadcastStorm)'
+    target_match_re:
+      alertname: '(SwitchCPUHigh|NetworkLatency|InterfaceDown)'
+    equal: ['instance']
+
+  # 规则 15: 交换机接口 Down 抑制连接到该接口的服务器告警
+  # 原因: 接口 Down 会导致服务器网络不可达
+  - source_match:
+      alertname: 'InterfaceDown'
+      device_type: 'switch'
+    target_match_re:
+      alertname: '(HostDown|NetworkUnreachable)'
+    equal: ['connected_switch_port']  # 需要在标签中标记连接关系
+
+  # 规则 16: ESXi 存储路径故障抑制 VM 磁盘 IO 告警
+  # 原因: 存储路径故障会导致所有 VM 磁盘 IO 慢
+  - source_match:
+      alertname: 'ESXiStoragePathDown'
+    target_match_re:
+      alertname: '(VMHighDiskIO|VMDiskLatency)'
+    equal: ['esxi_host']
+
+  # 规则 17: 数据中心级别故障抑制机房内所有告警
+  # 原因: 整个数据中心故障（如停电），抑制所有设备告警
+  - source_match:
+      alertname: 'DatacenterPowerLoss'
+    target_match_re:
+      alertname: '.*'
+    equal: ['datacenter']
+
+  # 规则 18: 上游服务故障抑制下游服务告警
+  # 原因: 数据库故障会导致应用服务不可用
+  - source_match:
+      alertname: 'ServiceDown'
+      service_tier: 'backend'
+    target_match:
+      alertname: 'ServiceDown'
+      service_tier: 'frontend'
+    equal: ['depends_on']  # 需要在标签中标记依赖关系
+
+  # 规则 19: 硬件故障抑制性能告警
+  # 原因: 硬件（风扇、电源）故障会导致 CPU 温度高等性能问题
+  - source_match_re:
+      alertname: '(FanFailure|PowerSupplyFailure)'
+      severity: 'critical'
+    target_match_re:
+      alertname: '(HighCPUTemperature|HighSystemTemperature)'
+    equal: ['instance']
+
+  # 规则 20: 网络设备硬件故障抑制网络性能告警
+  - source_match_re:
+      alertname: '(HighCPUTemperature|FanFailure|PowerSupplyFailure)'
+      device_type: 'switch'
+    target_match_re:
+      alertname: '(SwitchCPUHigh|HighMemory|InterfaceErrors)'
+    equal: ['instance']
 
 # ===================================================================
 # 配置说明:

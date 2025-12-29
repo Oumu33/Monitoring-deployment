@@ -42,3 +42,13 @@ docker-compose.override.yml
 # 测试文件
 test/
 *.test
+
+# 运行时数据目录
+data/topology/*.json
+data/topology/*.txt
+data/loki/
+data/promtail/
+
+# 敏感凭证
+.env.gnmi
+config/redfish-exporter/redfish.yml

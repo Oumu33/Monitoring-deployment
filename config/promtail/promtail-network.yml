@@ -1,0 +1,76 @@
+# ===================================================================
+# Promtail 网络设备日志采集配置
+# 用途: 采集 Syslog-NG 收集的网络设备日志
+# ===================================================================
+
+  # ===== 8. 网络设备 Syslog（所有设备）=====
+  - job_name: network-devices
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: syslog
+          source: network-devices
+          __path__: /var/log/network-devices/all-devices.log
+
+    pipeline_stages:
+      # Syslog 格式解析
+      - regex:
+          expression: '^(?P<timestamp>\S+\s+\S+)\s+(?P<host>\S+)\s+(?P<facility>\S+)\.(?P<priority>\S+)\s+(?P<program>\S+?):\s+(?P<message>.*)$'
+
+      - labels:
+          host:
+          facility:
+          priority:
+          program:
+
+      # 厂商识别
+      - match:
+          selector: '{job="syslog"} |~ "cisco|IOS|NX-OS"'
+          stages:
+            - static_labels:
+                vendor: cisco
+
+      - match:
+          selector: '{job="syslog"} |~ "arista|EOS"'
+          stages:
+            - static_labels:
+                vendor: arista
+
+      - match:
+          selector: '{job="syslog"} |~ "juniper|JUNOS"'
+          stages:
+            - static_labels:
+                vendor: juniper
+
+      # 提取关键事件
+      - match:
+          selector: '{job="syslog"} |~ "Interface.*down|link down"'
+          stages:
+            - static_labels:
+                event_type: interface_down
+
+      - match:
+          selector: '{job="syslog"} |~ "BGP.*down|neighbor.*down"'
+          stages:
+            - static_labels:
+                event_type: bgp_down
+
+  # ===== 9. 网络设备告警日志（只采集告警级别）=====
+  - job_name: network-alerts
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: network-alerts
+          source: network-devices
+          severity: high
+          __path__: /var/log/network-devices/alerts.log
+
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\S+\s+\S+)\s+(?P<host>\S+)\s+(?P<facility>\S+)\.(?P<priority>\S+)\s+(?P<program>\S+?):\s+(?P<message>.*)$'
+
+      - labels:
+          host:
+          program:

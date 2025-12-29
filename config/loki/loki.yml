@@ -1,0 +1,133 @@
+# ===================================================================
+# Loki 配置文件
+# 用途: 日志聚合和查询
+# 文档: https://grafana.com/docs/loki/latest/configuration/
+# ===================================================================
+
+# 认证配置（单机模式不需要）
+auth_enabled: false
+
+# HTTP 服务配置
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: info
+
+# 摄入器配置（接收日志）
+ingester:
+  # 生命周期配置
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+    final_sleep: 0s
+
+  # Chunk 配置
+  chunk_idle_period: 5m       # 多久未写入就刷新 chunk
+  chunk_retain_period: 30s    # chunk 保留时间
+  max_chunk_age: 1h           # chunk 最大存活时间
+
+  # 限制
+  chunk_encoding: snappy      # 压缩算法
+  max_transfer_retries: 0
+
+# Schema 配置（存储结构）
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 24h   # 索引按天分割
+
+# 存储配置
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/boltdb-shipper-active
+    cache_location: /loki/boltdb-shipper-cache
+    cache_ttl: 24h
+    shared_store: filesystem
+
+  filesystem:
+    directory: /loki/chunks
+
+# Compactor 配置（数据压缩和保留）
+compactor:
+  working_directory: /loki/compactor
+  shared_store: filesystem
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+
+# 数据保留策略
+limits_config:
+  # 日志保留时间
+  retention_period: 30d       # 保留 30 天
+
+  # 摄入限制
+  ingestion_rate_mb: 10       # 每秒摄入速率限制 (MB)
+  ingestion_burst_size_mb: 20 # 突发限制
+
+  # 查询限制
+  max_query_series: 500       # 单次查询最大系列数
+  max_query_parallelism: 32   # 查询并行度
+  max_query_length: 721h      # 最大查询时间范围（30天）
+  max_entries_limit_per_query: 5000  # 单次查询最大日志条数
+
+  # 流限制
+  max_streams_per_user: 0     # 0 表示无限制
+  max_global_streams_per_user: 0
+
+# Ruler 配置（告警规则）
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  rule_path: /loki/rules-temp
+  alertmanager_url: http://alertmanager:9093
+  ring:
+    kvstore:
+      store: inmemory
+  enable_api: true
+  enable_alertmanager_v2: true
+
+# 查询范围配置
+query_range:
+  # 结果缓存
+  results_cache:
+    cache:
+      enable_fifocache: true
+      fifocache:
+        max_size_items: 1024
+        validity: 24h
+
+# 分析器配置（性能分析）
+analytics:
+  reporting_enabled: false
+
+# ===================================================================
+# 配置说明:
+#
+# 1. 存储模式:
+#    - 单机模式: boltdb-shipper + filesystem
+#    - 集群模式: 使用 S3/GCS 等对象存储
+#
+# 2. 数据保留:
+#    - retention_period: 30 天（可根据需求调整）
+#    - 过期数据自动删除
+#
+# 3. 性能优化:
+#    - chunk_idle_period: 5m（日志较少时调大）
+#    - max_query_parallelism: 32（根据 CPU 核心数调整）
+#
+# 4. 告警规则:
+#    - 规则文件放在 /loki/rules/ 目录
+#    - 自动发送到 Alertmanager
+#
+# ===================================================================
