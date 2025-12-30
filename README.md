@@ -486,20 +486,27 @@ http://localhost:3000
 - 点击图表标题 → 自动跳转到 Logs Explorer
 - 自动传递时间范围和 instance 参数
 - 显示服务器状态表格
+- 点击顶部链接 → 跳转到 Network Overview / Network Topology / Logs Explorer
 
-**2. Logs Explorer（日志查询）**
+**2. Network Overview（网络设备概览）**
+- 显示网络设备（交换机、路由器）的 CPU、内存、接口流量
+- 点击图表标题 → 自动跳转到 Logs Explorer
+- 自动传递时间范围和 instance 参数
+- 显示设备状态表格
+- 点击顶部链接 → 跳转到 Server Overview / Network Topology / Logs Explorer
+
+**3. Logs Explorer（日志查询）**
 - 显示指定 instance 的日志
 - 自动过滤时间范围
 - 点击 "View Topology" → 自动跳转到 Network Topology
-- 点击 "Back to Server Overview" → 返回服务器概览
+- 点击顶部链接 → 跳转到 Server Overview / Network Overview / Network Topology
 
-**3. Network Topology（网络拓扑）**
+**4. Network Topology（网络拓扑）**
 - Node Graph 可视化设备连接关系
 - 显示设备层级（core/aggregation/access）
-- 点击 "Server Overview" → 跳转到服务器概览
-- 点击 "Logs Explorer" → 跳转到日志查询
+- 点击顶部链接 → 跳转到 Server Overview / Network Overview / Logs Explorer
 
-**4. 拓扑标签查询**
+**5. 拓扑标签查询**
 - 查询所有核心交换机的 CPU 使用率
   ```promql
   node_cpu_usage{device_tier="core"}
@@ -509,7 +516,7 @@ http://localhost:3000
   up{connected_switch="SW-Core-01"}
   ```
 
-**5. Topology Changes（拓扑变化）**
+**6. Topology Changes（拓扑变化）**
 - 显示新增/删除的节点和连接
 - 显示链路聚合和环路检测
 - 显示拓扑变化历史
@@ -771,31 +778,48 @@ topology_lacp_links < expected_value
 
 ### 🚀 快速上手
 
-#### 步骤 1：查看 Metrics
+#### 场景 1：服务器监控
 
+**步骤 1：查看 Metrics**
 1. 打开 Grafana：`http://localhost:3000`
-2. 进入 **Explore** → **VictoriaMetrics**
-3. 查询指标：`up{job="node-exporter"}`
+2. 进入 **Dashboards** → **Browse** → **Server Overview**
+3. 查看 CPU、内存、磁盘、网络指标
 4. 找到异常指标（红色或黄色）
 
-#### 步骤 2：查看 Logs
+**步骤 2：点击跳转到 Logs**
+1. 在 Server Overview 面板中点击异常图表标题
+2. **自动跳转到 Logs Explorer 面板**
+3. 自动显示该时间段的日志
 
-1. 切换到 **Explore** → **Loki**
-2. 查询日志：`{instance="Server-01"}`
-3. 设置时间范围（根据 Metrics 异常时间）
-4. 查看错误日志
+**步骤 3：查看拓扑链路**
+1. 在 Logs Explorer 面板中点击 "View Topology"
+2. **自动跳转到 Network Topology 面板**
+3. 查看设备的拓扑连接关系
 
-#### 步骤 3：查看拓扑链路
+**步骤 4：根因分析**
+1. 综合查看 Metrics、Logs、Topology
+2. 分析三者关系
+3. 快速定位根因
 
-1. 切换到 **Network Topology** 面板
-2. 查看设备的拓扑连接关系
-3. 通过拓扑标签查询关联设备
-   ```promql
-   up{connected_switch="Switch-Access-01"}
-   ```
+#### 场景 2：网络设备监控
 
-#### 步骤 4：根因分析
+**步骤 1：查看 Metrics**
+1. 打开 Grafana：`http://localhost:3000`
+2. 进入 **Dashboards** → **Browse** → **Network Overview**
+3. 查看交换机、路由器的 CPU、内存、接口流量
+4. 找到异常指标（红色或黄色）
 
+**步骤 2：点击跳转到 Logs**
+1. 在 Network Overview 面板中点击异常图表标题
+2. **自动跳转到 Logs Explorer 面板**
+3. 自动显示该时间段的日志
+
+**步骤 3：查看拓扑链路**
+1. 在 Logs Explorer 面板中点击 "View Topology"
+2. **自动跳转到 Network Topology 面板**
+3. 查看设备的拓扑连接关系
+
+**步骤 4：根因分析**
 1. 综合查看 Metrics、Logs、Topology
 2. 分析三者关系
 3. 快速定位根因

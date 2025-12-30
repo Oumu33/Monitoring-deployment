@@ -28,7 +28,20 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "title": "Server Overview",
+      "url": "/d/server-overview?${__url_time_range}"
+    },
+    {
+      "title": "Network Overview",
+      "url": "/d/network-overview?${__url_time_range}"
+    },
+    {
+      "title": "Network Topology",
+      "url": "/d/network-topology-lldp?${__url_time_range}"
+    }
+  ],
   "liveNow": false,
   "panels": [
     {

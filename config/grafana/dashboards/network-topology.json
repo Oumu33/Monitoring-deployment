@@ -46,6 +46,10 @@
       "url": "/d/server-overview?${__url_time_range}"
     },
     {
+      "title": "Network Overview",
+      "url": "/d/network-overview?${__url_time_range}"
+    },
+    {
       "title": "Logs Explorer",
       "url": "/d/logs-explorer?${__url_time_range}"
     }

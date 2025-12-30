@@ -42,8 +42,8 @@
   "id": null,
   "links": [
     {
-      "title": "Network Overview",
-      "url": "/d/network-overview?${__url_time_range}"
+      "title": "Server Overview",
+      "url": "/d/server-overview?${__url_time_range}"
     },
     {
       "title": "Network Topology",
@@ -102,11 +102,11 @@
             "type": "prometheus",
             "uid": "${DS_VICTORIAMETRICS}"
           },
-          "expr": "count(up{job=\"node-exporter\"})",
+          "expr": "count(up{job=\"snmp-exporter\"})",
           "refId": "A"
         }
       ],
-      "title": "Total Servers",
+      "title": "Total Devices",
       "type": "stat"
     },
     {
@@ -155,11 +155,11 @@
             "type": "prometheus",
             "uid": "${DS_VICTORIAMETRICS}"
           },
-          "expr": "count(up{job=\"node-exporter\"} == 1)",
+          "expr": "count(up{job=\"snmp-exporter\"} == 1)",
           "refId": "A"
         }
       ],
-      "title": "Online Servers",
+      "title": "Online Devices",
       "type": "stat"
     },
     {
@@ -216,11 +216,11 @@
             "type": "prometheus",
             "uid": "${DS_VICTORIAMETRICS}"
           },
-          "expr": "count(up{job=\"node-exporter\"} == 0)",
+          "expr": "count(up{job=\"snmp-exporter\"} == 0)",
           "refId": "A"
         }
       ],
-      "title": "Offline Servers",
+      "title": "Offline Devices",
       "type": "stat"
     },
     {
@@ -277,7 +277,7 @@
             "type": "prometheus",
             "uid": "${DS_VICTORIAMETRICS}"
           },
-          "expr": "count(ALERTS{alertname=~\".*Server.*\"})",
+          "expr": "count(ALERTS{alertname=~\".*Switch.*|.*Router.*\"})",
           "refId": "A"
         }
       ],
@@ -377,12 +377,12 @@
             "type": "prometheus",
             "uid": "${DS_VICTORIAMETRICS}"
           },
-          "expr": "(1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) * 100",
+          "expr": "(1 - avg by (instance) (rate(snmp_engine_boots[5m]))) * 100",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "title": "CPU Usage (Click to View Logs)",
+      "title": "Device CPU Usage (Click to View Logs)",
       "type": "timeseries"
     },
     {
@@ -478,12 +478,12 @@
             "type": "prometheus",
             "uid": "${DS_VICTORIAMETRICS}"
           },
-          "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+          "expr": "(1 - (snmp_mem_free / snmp_mem_total)) * 100",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "title": "Memory Usage (Click to View Logs)",
+      "title": "Device Memory Usage (Click to View Logs)",
       "type": "timeseries"
     },
     {
@@ -579,12 +579,12 @@
             "type": "prometheus",
             "uid": "${DS_VICTORIAMETRICS}"
           },
-          "expr": "(1 - (node_filesystem_avail_bytes{fstype!=\"tmpfs\"} / node_filesystem_size_bytes{fstype!=\"tmpfs\"})) * 100",
-          "legendFormat": "{{instance}} - {{mountpoint}}",
+          "expr": "rate(ifHCInOctets[5m]) * 8 / 1000000000",
+          "legendFormat": "{{instance}} - {{ifName}}",
           "refId": "A"
         }
       ],
-      "title": "Disk Usage (Click to View Logs)",
+      "title": "Interface Traffic In (Click to View Logs)",
       "type": "timeseries"
     },
     {
@@ -637,7 +637,7 @@
               }
             ]
           },
-          "unit": "Bps"
+          "unit": "pps"
         },
         "overrides": []
       },
@@ -672,12 +672,12 @@
             "type": "prometheus",
             "uid": "${DS_VICTORIAMETRICS}"
           },
-          "expr": "rate(node_network_receive_bytes_total[5m])",
-          "legendFormat": "{{instance}} - {{device}}",
+          "expr": "rate(ifHCInUcastPkts[5m])",
+          "legendFormat": "{{instance}} - {{ifName}}",
           "refId": "A"
         }
       ],
-      "title": "Network Traffic In (Click to View Logs)",
+      "title": "Interface Packets In (Click to View Logs)",
       "type": "timeseries"
     },
     {
@@ -705,13 +705,13 @@
             "type": "prometheus",
             "uid": "${DS_VICTORIAMETRICS}"
           },
-          "expr": "up{job=\"node-exporter\"}",
+          "expr": "up{job=\"snmp-exporter\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
         }
       ],
-      "title": "Server Status",
+      "title": "Device Status",
       "transformations": [
         {
           "id": "organize",
@@ -724,10 +724,10 @@
             },
             "indexByName": {},
             "renameByName": {
-              "instance": "Server",
+              "instance": "Device",
               "device_tier": "Tier",
               "device_location": "Location",
-              "connected_switch": "Connected Switch"
+              "device_vendor": "Vendor"
             }
           }
         }
@@ -738,7 +738,7 @@
   "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["server", "overview", "metrics"],
+  "tags": ["network", "overview", "switch", "router"],
   "templating": {
     "list": []
   },
@@ -748,8 +748,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Server Overview",
-  "uid": "server-overview",
+  "title": "Network Overview",
+  "uid": "network-overview",
   "version": 0,
   "weekStart": ""
 }
