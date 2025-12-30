@@ -1,0 +1,716 @@
+# ===================================================================
+# 预测性告警规则
+# 用途: 基于趋势预测提前发出告警，防患于未然
+# 特点: 在故障发生前预警，而不是故障发生后告警
+# ===================================================================
+
+groups:
+  - name: predictive-cpu-alerts
+    interval: 30s
+    rules:
+
+      # ===== CPU 使用率预测告警 =====
+
+      # 告警 1: CPU 使用率将在 1 小时内超过 90%（增强版 - 使用自适应精准预测）
+      - alert: PredictiveCPUHighIn1HourEnhanced
+        expr: |
+          host:cpu:usage:predicted:final > 90
+          and host:cpu:usage:prediction:quality > 0.5  # 预测质量 > 50%
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: predictive
+          component: cpu
+          subcategory: forecast
+          prediction_method: adaptive
+        annotations:
+          summary: "⚠️ 预测告警: 主机 {{ $labels.instance }} CPU 使用率将在 1 小时内达到 {{ $value | printf "%.1f" }}%"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **当前 CPU 使用率**: {{ $labels.host_cpu_usage_percentage | printf "%.1f" }}%
+            **1 小时后预测**: {{ $value | printf "%.1f" }}%
+            **预测质量评分**: {{ $labels.host_cpu_usage_prediction_quality | printf "%.0f" }}%
+            **预测稳定性**: {{ $labels.host_cpu_usage_prediction_stability | printf "%.0f" }}%
+            **预测置信度**: {{ $labels.host_cpu_usage_prediction_confidence | printf "%.0f" }}%
+
+            **多模型预测对比**:
+            - 线性回归: {{ $labels.host_cpu_usage_predicted_1h | printf "%.1f" }}% (准确度: {{ $labels.host_cpu_usage_accuracy_linear | printf "%.0f" }}%)
+            - 季节性预测: {{ $labels.host_cpu_usage_predicted_seasonal | printf "%.1f" }}% (准确度: {{ $labels.host_cpu_usage_accuracy_seasonal | printf "%.0f" }}%)
+            - 多指标预测: {{ $labels.host_cpu_usage_predicted_multivariate | printf "%.1f" }}% (准确度: {{ $labels.host_cpu_usage_accuracy_multivariate | printf "%.0f" }}%)
+            - 融合预测: {{ $labels.host_cpu_usage_predicted_ensemble | printf "%.1f" }}% (准确度: {{ $labels.host_cpu_usage_accuracy_ensemble | printf "%.0f" }}%)
+            - **自适应预测**: {{ $value | printf "%.1f" }}% (准确度: {{ $labels.host_cpu_usage_accuracy_adaptive | printf "%.0f" }}%)
+
+            **历史对比**:
+            - 昨天同期: {{ $labels.host_cpu_usage_history_same_time_yesterday | printf "%.1f" }}%
+            - 上周同期: {{ $labels.host_cpu_usage_history_same_time_last_week | printf "%.1f" }}%
+            - 7 天基线: {{ $labels.host_cpu_usage_history_baseline_7d | printf "%.1f" }}%
+            - 历史偏差: {{ $labels.host_cpu_usage_deviation_from_history | printf "%.1f" }}%
+
+            **季节性分析**:
+            - 趋势分量: {{ $labels.host_cpu_usage_seasonal_trend | printf "%.1f" }}%
+            - 季节性分量: {{ $labels.host_cpu_usage_seasonal_seasonal | printf "%.1f" }}%
+            - 残差分量: {{ $labels.host_cpu_usage_seasonal_residual | printf "%.1f" }}%
+            - 每日基线: {{ $labels.host_cpu_usage_seasonal_daily_baseline | printf "%.1f" }}%
+            - 周期性模式变化: {{ $labels.host_cpu_usage_seasonal_pattern_change | printf "%.1f" }}%
+
+            **多指标关联**:
+            - 进程数量趋势: {{ $labels.host_procs_running_rate | printf "%.0f" }}/秒
+            - 网络流量: {{ $labels.host_network_in_mbps | printf "%.1f" }} Mbps
+            - CPU-内存相关性: {{ $labels.host_cpu_memory_correlation | printf "%.2f" }}
+
+            **预测依据**:
+            - 自适应模型选择: {{ if gt $labels.host_cpu_usage_prediction_quality 0.7 }}高质量预测{{ else if gt $labels.host_cpu_usage_prediction_quality 0.5 }}中等质量预测{{ else }}低质量预测，使用历史基线{{ end }}
+            - 预测方法: 已自动选择最准确的预测模型
+            - 置信度评分: {{ $labels.host_cpu_usage_prediction_confidence | printf "%.0f" }}%
+
+            **建议操作**:
+            1. 检查是否有异常进程占用 CPU
+            2. 查看进程列表: `top -o %CPU`
+            3. 考虑迁移部分负载到其他主机
+            4. 如果是业务增长，考虑扩容
+
+            **自动缓解建议**:
+            {{ if gt $labels.host_cpu_usage_deviation_from_history 30 }}
+            - ⚠️ 检测到异常增长（{{ $labels.host_cpu_usage_deviation_from_history | printf "%.0f" }}%），可能存在异常进程
+            - 建议立即执行: `ps aux --sort=-%CPU | head -20`
+            - 建议检查是否有新部署的服务或定时任务
+            {{ else if gt $labels.host_cpu_usage_deviation_from_history 10 }}
+            - ℹ️ 检测到正常业务增长（{{ $labels.host_cpu_usage_deviation_from_history | printf "%.0f" }}%）
+            - 建议准备扩容方案
+            - 建议检查负载均衡配置
+            {{ else }}
+            - ℹ️ 检测到周期性高峰，属于正常业务模式
+            - 建议优化业务调度，错峰处理
+            - 建议启用自动扩容策略
+            {{ end }}
+
+            **预防措施**:
+            - 启用 CPU 使用率自动告警（阈值 80%）
+            - 配置自动扩容策略
+            - 定期审查 CPU 使用趋势
+            - 优化高 CPU 消耗的应用
+
+            **相关日志**:
+            ```logql
+            {host="{{ $labels.instance }}"} |~ "cpu|CPU|process" | level != "debug"
+            ```
+
+            **监控链接**:
+            - Grafana: http://localhost:3000/d/server-overview?var-instance={{ $labels.instance }}
+            - 拓扑图: http://localhost:3000/d/network-topology
+          prediction_horizon: "1 hour"
+          prediction_value: "{{ $value }}"
+          current_value: "{{ $labels.host_cpu_usage_percentage }}"
+          prediction_quality: "{{ $labels.host_cpu_usage_prediction_quality }}"
+          prediction_stability: "{{ $labels.host_cpu_usage_prediction_stability }}"
+          prediction_confidence: "{{ $labels.host_cpu_usage_prediction_confidence }}"
+          prediction_method: "adaptive"
+          historical_baseline: "{{ $labels.host_cpu_usage_history_baseline_7d }}"
+          deviation: "{{ $labels.host_cpu_usage_deviation_from_history }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-cpu-high-enhanced"
+
+      # 告警 2: CPU 使用率将在 30 分钟内超过 95%（紧急）
+      - alert: PredictiveCPUHighIn30Min
+        expr: |
+          host:cpu:usage:predicted_1h > 95
+          and host:cpu:usage:trend:slope_1h > 0.2  # 快速上升
+        for: 3m
+        labels:
+          severity: critical
+          priority: P0
+          category: predictive
+          component: cpu
+          subcategory: forecast
+        annotations:
+          summary: "🔴 紧急预测: 主机 {{ $labels.instance }} CPU 使用率将在 30 分钟内超过 95%"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **当前 CPU 使用率**: {{ $labels.host_cpu_usage_percentage | printf "%.1f" }}%
+            **30 分钟后预测**: {{ $value | printf "%.1f" }}%
+            **趋势斜率**: {{ $labels.host_cpu_usage_trend_slope_1h | printf "%.4f" }}%/秒（快速上升）
+
+            **紧急程度**: 🔴 高
+
+            **立即行动**:
+            1. 立即检查异常进程
+            2. 考虑终止非关键进程
+            3. 准备迁移虚拟机（如适用）
+            4. 联系应用团队确认业务情况
+
+            **预计达到 95% 时间**: {{ $labels.time_until_critical | printf "%.0f" }} 秒后
+          prediction_horizon: "30 minutes"
+          prediction_value: "{{ $value }}"
+          time_to_threshold: "{{ $labels.time_until_critical }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-cpu-critical"
+
+      # 告警 3: CPU 使用率异常增长（异常评分 > 2）
+      - alert: PredictiveCPUAnomalyDetected
+        expr: |
+          abs(host:cpu:usage:anomaly_score) > 2
+          and host:cpu:usage:percentage > 50
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: predictive
+          component: cpu
+          subcategory: anomaly
+        annotations:
+          summary: "⚠️ 异常检测: 主机 {{ $labels.instance }} CPU 使用率异常增长"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **当前 CPU 使用率**: {{ $labels.host_cpu_usage_percentage | printf "%.1f" }}%
+            **异常评分**: {{ $value | printf "%.2f" }}（正常范围: -2 ~ 2）
+
+            **异常说明**:
+            - 当前值超出均值 {{ $value | printf "%.2f" }} 倍标准差
+            - 可能是突发负载或异常进程
+
+            **建议操作**:
+            1. 检查是否有新任务启动
+            2. 查看进程列表
+            3. 检查是否有性能测试
+          anomaly_score: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-cpu-anomaly"
+
+  - name: predictive-memory-alerts
+    interval: 30s
+    rules:
+
+      # ===== 内存使用率预测告警 =====
+
+      # 告警 1: 内存使用率将在 1 小时内超过 95%
+      - alert: PredictiveMemoryHighIn1Hour
+        expr: |
+          host:memory:usage:predicted_1h > 95
+          and host:memory:usage:trend:slope_1h > 0.05
+          and host:memory:usage:prediction:confidence > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: predictive
+          component: memory
+          subcategory: forecast
+        annotations:
+          summary: "⚠️ 预测告警: 主机 {{ $labels.instance }} 内存使用率将在 1 小时内达到 {{ $value | printf "%.1f" }}%"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **当前内存使用率**: {{ $labels.host_memory_usage_percentage | printf "%.1f" }}%
+            **1 小时后预测**: {{ $value | printf "%.1f" }}%
+            **趋势斜率**: {{ $labels.host_memory_usage_trend_slope_1h | printf "%.4f" }}%/秒
+            **预测置信度**: {{ $labels.host_memory_usage_prediction_confidence | printf "%.0f" }}%
+
+            **历史对比**:
+            - 昨天同期: {{ $labels.host_memory_usage_history_same_time_yesterday | printf "%.1f" }}%
+            - 上周同期: {{ $labels.host_memory_usage_history_same_time_last_week | printf "%.1f" }}%
+            - 7 天基线: {{ $labels.host_memory_usage_history_baseline_7d | printf "%.1f" }}%
+            - 历史偏差: {{ $labels.host_memory_usage_deviation_from_history | printf "%.1f" }}%
+
+            **风险**: 可能触发 OOM Killer
+
+            **建议操作**:
+            1. 检查是否有内存泄漏
+            2. 查看进程内存占用: `top -o %MEM`
+            3. 考虑重启内存泄漏的服务
+            4. 评估是否需要增加内存
+
+            **自动缓解建议**:
+            {{ if gt $labels.host_memory_usage_deviation_from_history 20 }}
+            - ⚠️ 检测到异常增长（{{ $labels.host_memory_usage_deviation_from_history | printf "%.0f" }}%），可能存在内存泄漏
+            - 建议立即执行: `ps aux --sort=-%MEM | head -20`
+            - 建议检查应用日志中的内存分配模式
+            - 建议考虑重启可疑服务
+            {{ else if gt $labels.host_memory_usage_deviation_from_history 10 }}
+            - ℹ️ 检测到正常业务增长（{{ $labels.host_memory_usage_deviation_from_history | printf "%.0f" }}%）
+            - 建议评估内存扩容需求
+            - 建议检查是否有新部署的服务
+            {{ else }}
+            - ℹ️ 检测到周期性高峰，属于正常业务模式
+            - 建议优化内存使用策略
+            - 建议配置内存限制和回收策略
+            {{ end }}
+
+            **预防措施**:
+            - 启用内存使用率自动告警（阈值 85%）
+            - 配置 OOM Killer 保护策略
+            - 定期清理缓存和临时文件
+            - 优化应用内存使用
+
+            **相关日志**:
+            ```logql
+            {host="{{ $labels.instance }}"} |~ "oom|OOM|memory|Memory" | level =~ "error|warning"
+            ```
+          prediction_horizon: "1 hour"
+          prediction_value: "{{ $value }}"
+          current_value: "{{ $labels.host_memory_usage_percentage }}"
+          trend_slope: "{{ $labels.host_memory_usage_trend_slope_1h }}"
+          confidence: "{{ $labels.host_memory_usage_prediction_confidence }}"
+          historical_baseline: "{{ $labels.host_memory_usage_history_baseline_7d }}"
+          deviation: "{{ $labels.host_memory_usage_deviation_from_history }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-memory-high"
+
+      # 告警 2: 内存使用率将在 30 分钟内超过 98%（紧急）
+      - alert: PredictiveMemoryHighIn30Min
+        expr: |
+          host:memory:usage:predicted_1h > 98
+          and host:memory:usage:trend:slope_1h > 0.1
+        for: 3m
+        labels:
+          severity: critical
+          priority: P0
+          category: predictive
+          component: memory
+          subcategory: forecast
+        annotations:
+          summary: "🔴 紧急预测: 主机 {{ $labels.instance }} 内存使用率将在 30 分钟内超过 98%"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **当前内存使用率**: {{ $labels.host_memory_usage_percentage | printf "%.1f" }}%
+            **30 分钟后预测**: {{ $value | printf "%.1f" }}%
+
+            **紧急程度**: 🔴 高（即将触发 OOM）
+
+            **立即行动**:
+            1. 立即检查大内存进程
+            2. 考虑终止非关键进程
+            3. 准备重启服务
+            4. 联系应用团队
+
+            **预计达到 98% 时间**: {{ $labels.time_until_critical | printf "%.0f" }} 秒后
+          prediction_horizon: "30 minutes"
+          prediction_value: "{{ $value }}"
+          time_to_threshold: "{{ $labels.time_until_critical }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-memory-critical"
+
+  - name: predictive-disk-alerts
+    interval: 5m
+    rules:
+
+      # ===== 磁盘使用率预测告警 =====
+
+      # 告警 1: 磁盘将在 7 天内超过 90%
+      - alert: PredictiveDiskFullIn7Days
+        expr: |
+          host:disk:usage:predicted_7d > 90
+          and host:disk:usage:trend:slope_7d > 0.01
+          and abs(host:disk:usage:growth:anomaly_score) < 2  # 非异常增长
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: predictive
+          component: disk
+          subcategory: forecast
+        annotations:
+          summary: "⚠️ 预测告警: 主机 {{ $labels.instance }} 磁盘 {{ $labels.mountpoint }} 将在 7 天内达到 {{ $value | printf "%.1f" }}%"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **挂载点**: {{ $labels.mountpoint }}
+            **当前使用率**: {{ $labels.host_disk_usage_percentage | printf "%.1f" }}%
+            **7 天后预测**: {{ $value | printf "%.1f" }}%
+            **每天增长**: {{ $labels.host_disk_usage_trend_slope_7d | printf "%.2f" }}%
+
+            **历史对比**:
+            - 上周同期: {{ $labels.host_disk_usage_history_same_time_last_week | printf "%.1f" }}%
+            - 4 周基线: {{ $labels.host_disk_usage_history_baseline_4w | printf "%.1f" }}%
+            - 历史偏差: {{ $labels.host_disk_usage_deviation_from_history | printf "%.1f" }}%
+
+            **建议操作**:
+            1. 清理旧日志文件
+            2. 删除临时文件
+            3. 扩容磁盘
+            4. 迁移数据到其他磁盘
+
+            **自动缓解建议**:
+            {{ if gt $labels.host_disk_usage_deviation_from_history 15 }}
+            - ⚠️ 检测到异常增长（{{ $labels.host_disk_usage_deviation_from_history | printf "%.0f" }}%），可能存在日志未轮转或数据堆积
+            - 建议立即执行: `du -sh {{ $labels.mountpoint }}/* | sort -rh | head -10`
+            - 建议检查日志轮转配置
+            - 建议检查是否有大文件生成
+            {{ else if gt $labels.host_disk_usage_deviation_from_history 5 }}
+            - ℹ️ 检测到正常增长（{{ $labels.host_disk_usage_deviation_from_history | printf "%.0f" }}%）
+            - 建议制定扩容计划
+            - 建议清理不必要的文件
+            {{ else }}
+            - ℹ️ 检测到周期性增长，属于正常业务模式
+            - 建议配置自动清理脚本
+            - 建议启用日志压缩和归档
+            {{ end }}
+
+            **预防措施**:
+            - 启用磁盘使用率自动告警（阈值 85%）
+            - 配置日志自动轮转和清理
+            - 定期审查磁盘使用趋势
+            - 制定容量规划策略
+
+            **预计满时间**: {{ $labels.time_until_full | printf "%.1f" }} 天
+          prediction_horizon: "7 days"
+          prediction_value: "{{ $value }}"
+          time_to_full: "{{ $labels.time_until_full }}"
+          historical_baseline: "{{ $labels.host_disk_usage_history_baseline_4w }}"
+          deviation: "{{ $labels.host_disk_usage_deviation_from_history }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-disk-full"
+
+      # 告警 2: 磁盘将在 3 天内超过 95%（紧急）
+      - alert: PredictiveDiskFullIn3Days
+        expr: |
+          host:disk:usage:predicted_7d > 95
+          and host:disk:usage:trend:slope_7d > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          priority: P1
+          category: predictive
+          component: disk
+          subcategory: forecast
+        annotations:
+          summary: "🔴 紧急预测: 主机 {{ $labels.instance }} 磁盘 {{ $labels.mountpoint }} 将在 3 天内超过 95%"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **挂载点**: {{ $labels.mountpoint }}
+            **当前使用率**: {{ $labels.host_disk_usage_percentage | printf "%.1f" }}%
+            **3 天后预测**: {{ $value | printf "%.1f" }}%
+
+            **立即行动**:
+            1. 立即清理磁盘
+            2. 申请扩容
+            3. 迁移数据
+
+            **预计满时间**: {{ $labels.time_until_full | printf "%.1f" }} 天
+          prediction_horizon: "3 days"
+          prediction_value: "{{ $value }}"
+          time_to_full: "{{ $labels.time_until_full }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-disk-critical"
+
+      # 告警 3: 磁盘增长速率异常（每天增长 > 5%）
+      - alert: PredictiveDiskGrowthAnomaly
+        expr: |
+          host:disk:usage:trend:slope_7d > 5
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: predictive
+          component: disk
+          subcategory: anomaly
+        annotations:
+          summary: "⚠️ 异常检测: 主机 {{ $labels.instance }} 磁盘 {{ $labels.mountpoint }} 增长速率异常"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **挂载点**: {{ $labels.mountpoint }}
+            **每天增长率**: {{ $value | printf "%.2f" }}%
+
+            **可能原因**:
+            - 日志未轮转
+            - 临时文件堆积
+            - 数据备份未清理
+
+            **建议操作**:
+            1. 检查日志文件大小
+            2. 检查临时文件目录
+            3. 检查备份目录
+          growth_rate: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-disk-anomaly"
+
+  - name: predictive-network-alerts
+    interval: 30s
+    rules:
+
+      # ===== 网络流量预测告警 =====
+
+      # 告警 1: 网络带宽将在 1 小时内超过 80%
+      - alert: PredictiveNetworkBandwidthHighIn1Hour
+        expr: |
+          host:network:bandwidth:usage:percentage > 70
+          and host:network:in:trend:slope_1h > 0.5  # 流量持续上升
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: predictive
+          component: network
+          subcategory: forecast
+        annotations:
+          summary: "⚠️ 预测告警: 主机 {{ $labels.instance }} 网络带宽使用率将在 1 小时内超过 80%"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **当前带宽使用率**: {{ $labels.host_network_bandwidth_usage_percentage | printf "%.1f" }}%
+            **入站流量**: {{ $labels.host_network_in_mbps | printf "%.1f" }} Mbps
+            **出站流量**: {{ $labels.host_network_out_mbps | printf "%.1f" }} Mbps
+            **趋势斜率**: {{ $labels.host_network_in_trend_slope_1h | printf "%.2f" }} Mbps/秒
+
+            **建议操作**:
+            1. 检查是否有大流量任务
+            2. 检查是否有网络攻击
+            3. 考虑升级网络带宽
+            4. 优化应用流量
+
+            **相关日志**:
+            ```logql
+            {host="{{ $labels.instance }}"} |~ "network|bandwidth|traffic" | level =~ "error|warning"
+            ```
+          prediction_horizon: "1 hour"
+          current_bandwidth: "{{ $labels.host_network_bandwidth_usage_percentage }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-network-high"
+
+  - name: predictive-switch-alerts
+    interval: 30s
+    rules:
+
+      # ===== 交换机预测告警 =====
+
+      # 告警 1: 交换机 CPU 将在 1 小时内超过 80%
+      - alert: PredictiveSwitchCPUHighIn1Hour
+        expr: |
+          switch:cpu:usage:predicted_1h > 80
+          and switch:cpu:usage:trend:slope_1h > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: predictive
+          component: switch
+          subcategory: forecast
+        annotations:
+          summary: "⚠️ 预测告警: 交换机 {{ $labels.instance }} CPU 使用率将在 1 小时内达到 {{ $value | printf "%.1f" }}%"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **当前 CPU 使用率**: {{ $labels.switch_cpu_usage_percentage | printf "%.1f" }}%
+            **1 小时后预测**: {{ $value | printf "%.1f" }}%
+
+            **影响**: 可能导致网络延迟增加
+
+            **建议操作**:
+            1. 检查是否有异常流量
+            2. 检查路由表大小
+            3. 检查是否有网络攻击
+            4. 考虑升级交换机
+
+            **拓扑影响**:
+            - 设备层级: {{ $labels.device_tier }}
+            - 连接设备数: {{ $labels.connected_devices }}
+          prediction_horizon: "1 hour"
+          prediction_value: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-switch-cpu-high"
+
+      # 告警 2: 接口流量将在 1 小时内超过 90%
+      - alert: PredictiveSwitchInterfaceHighIn1Hour
+        expr: |
+          switch:interface:utilization:predicted_1h > 90
+          and switch:interface:utilization:trend:slope_1h > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: predictive
+          component: switch
+          subcategory: forecast
+        annotations:
+          summary: "⚠️ 预测告警: 交换机 {{ $labels.instance }} 接口 {{ $labels.ifDescr }} 流量将在 1 小时内达到 {{ $value | printf "%.1f" }}%"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **接口**: {{ $labels.ifDescr }}
+            **当前利用率**: {{ $labels.switch_interface_utilization_percentage | printf "%.1f" }}%
+            **1 小时后预测**: {{ $value | printf "%.1f" }}%
+
+            **影响**: 可能导致丢包
+
+            **建议操作**:
+            1. 检查连接的设备
+            2. 考虑链路聚合
+            3. 考虑升级接口带宽
+          prediction_horizon: "1 hour"
+          prediction_value: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-switch-interface-high"
+
+  - name: predictive-vmware-alerts
+    interval: 30s
+    rules:
+
+      # ===== VMware 预测告警 =====
+
+      # 告警 1: ESXi 主机 CPU 将在 1 小时内超过 85%
+      - alert: PredictiveESXiCPUHighIn1Hour
+        expr: |
+          esxi:host:cpu:usage:predicted_1h > 85
+          and esxi:host:cpu:usage:trend:slope_1h > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: predictive
+          component: esxi
+          subcategory: forecast
+        annotations:
+          summary: "⚠️ 预测告警: ESXi 主机 {{ $labels.esxhostname }} CPU 使用率将在 1 小时内达到 {{ $value | printf "%.1f" }}%"
+          description: |
+            **ESXi 主机**: {{ $labels.esxhostname }}
+            **当前 CPU 使用率**: {{ $labels.esxi_host_cpu_usage_percentage | printf "%.1f" }}%
+            **1 小时后预测**: {{ $value | printf "%.1f" }}%
+
+            **影响**: 虚拟机性能下降
+
+            **建议操作**:
+            1. 检查虚拟机 CPU 使用率
+            2. 迁移部分虚拟机到其他主机
+            3. 考虑扩容
+
+            **受影响虚拟机**:
+            {{ range $labels.vm_list }}
+            - {{ . }}
+            {{ end }}
+          prediction_horizon: "1 hour"
+          prediction_value: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-esxi-cpu-high"
+
+      # 告警 2: 数据存储将在 7 天内超过 90%
+      - alert: PredictiveDatastoreFullIn7Days
+        expr: |
+          esxi:datastore:usage:predicted_7d > 90
+          and esxi:datastore:usage:trend:slope_7d > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: predictive
+          component: datastore
+          subcategory: forecast
+        annotations:
+          summary: "⚠️ 预测告警: 数据存储 {{ $labels.dsname }} 将在 7 天内达到 {{ $value | printf "%.1f" }}%"
+          description: |
+            **数据存储**: {{ $labels.dsname }}
+            **当前使用率**: {{ $labels.esxi_datastore_usage_percentage | printf "%.1f" }}%
+            **7 天后预测**: {{ $value | printf "%.1f" }}%
+
+            **建议操作**:
+            1. 清理快照
+            2. 迁移虚拟机到其他存储
+            3. 扩容存储
+
+            **受影响虚拟机**: {{ $labels.affected_vms }} 台
+          prediction_horizon: "7 days"
+          prediction_value: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-datastore-full"
+
+  - name: predictive-summary-alerts
+    interval: 5m
+    rules:
+
+      # ===== 预测性告警汇总 =====
+
+      # 告警 1: 多个主机同时预测 CPU 过高（集群级别）
+      - alert: PredictiveClusterCPUHigh
+        expr: |
+          count(host:cpu:usage:predicted_1h > 90) by (cluster) > 3
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: predictive
+          component: cluster
+          subcategory: summary
+        annotations:
+          summary: "⚠️ 预测告警: 集群 {{ $labels.cluster }} 中有 {{ $value }} 台主机 CPU 使用率将在 1 小时内超过 90%"
+          description: |
+            **集群**: {{ $labels.cluster }}
+            **受影响主机数**: {{ $value }}
+
+            **可能原因**:
+            - 集群整体负载增加
+            - 业务高峰期
+            - 批量任务启动
+
+            **建议操作**:
+            1. 检查是否有批量任务
+            2. 考虑自动扩容
+            3. 联系业务团队确认
+
+            **自动缓解建议**:
+            - 建议启用集群自动扩容（HPA）
+            - 建议检查负载均衡策略
+            - 建议优化任务调度，错峰处理
+            - 建议评估是否需要增加节点
+
+            **预防措施**:
+            - 配置集群容量监控和告警
+            - 启用自动扩缩容策略
+            - 定期进行容量规划
+            - 优化资源利用率
+
+            **受影响主机列表**:
+            {{ range $labels.affected_hosts }}
+            - {{ . }}
+            {{ end }}
+          affected_hosts_count: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-cluster-cpu-high"
+
+      # 告警 2: 多个磁盘同时预测满（容量规划）
+      - alert: PredictiveMultipleDisksFull
+        expr: |
+          count(host:disk:usage:predicted_7d > 90) > 5
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: predictive
+          component: capacity
+          subcategory: planning
+        annotations:
+          summary: "⚠️ 预测告警: 有 {{ $value }} 个磁盘将在 7 天内超过 90%"
+          description: |
+            **受影响磁盘数**: {{ $value }}
+
+            **建议操作**:
+            1. 制定容量扩容计划
+            2. 评估是否需要采购新存储
+            3. 优化数据存储策略
+
+            **自动缓解建议**:
+            - 建议立即启动容量规划流程
+            - 建议评估存储采购需求
+            - 建议优化数据生命周期管理
+            - 建议启用数据分层存储策略
+
+            **预防措施**:
+            - 配置存储容量监控和告警
+            - 定期进行容量规划
+            - 优化数据存储策略
+            - 启用数据自动归档
+
+            **受影响磁盘列表**:
+            {{ range $labels.affected_disks }}
+            - {{ . }}
+            {{ end }}
+          affected_disks_count: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/predictive-multiple-disks-full"
+
+# ===================================================================
+# 告警规则说明:
+#
+# 1. 预测时间窗口:
+#    - 短期: 30 分钟（紧急）
+#    - 中期: 1 小时（常规）
+#    - 长期: 7 天（容量规划）
+#
+# 2. 预测可靠性:
+#    - CV（变异系数）< 0.3: 可靠性高
+#    - CV 0.3 ~ 0.5: 可靠性中等
+#    - CV > 0.5: 可靠性低，仅供参考
+#
+# 3. 告警优先级:
+#    - P0: 30 分钟内超过阈值（紧急）
+#    - P1: 1 小时内超过阈值（重要）
+#    - P2: 7 天内超过阈值（规划）
+#
+# 4. 趋势判断:
+#    - slope > 0: 上升趋势
+#    - slope < 0: 下降趋势
+#    - slope = 0: 稳定
+#
+# 5. 异常检测:
+#    - 异常评分 > 2: 超出 2 倍标准差
+#    - 异常评分 > 3: 严重异常
+#
+# ===================================================================

@@ -38,6 +38,10 @@ scrape_configs:
           job: syslog
           host: monitoring-host
           __path__: /var/log/syslog
+          # ===== 拓扑标签（从拓扑发现自动注入）=====
+          device_tier: 'monitoring'
+          connected_switch: ''
+          topology_path: 'dc1→monitoring'
 
       - targets:
           - localhost
@@ -45,6 +49,10 @@ scrape_configs:
           job: syslog
           host: monitoring-host
           __path__: /var/log/messages
+          # ===== 拓扑标签（从拓扑发现自动注入）=====
+          device_tier: 'monitoring'
+          connected_switch: ''
+          topology_path: 'dc1→monitoring'
 
     # 日志解析 Pipeline
     pipeline_stages:
@@ -71,6 +79,10 @@ scrape_configs:
           job: auth
           host: monitoring-host
           __path__: /var/log/auth.log
+          # ===== 拓扑标签（从拓扑发现自动注入）=====
+          device_tier: 'monitoring'
+          connected_switch: ''
+          topology_path: 'dc1→monitoring'
 
     pipeline_stages:
       - regex:
@@ -208,5 +220,92 @@ scrape_configs:
 # - 高基数字段（user_id, request_id）不要作为标签
 # - 低基数字段（level, host, job）适合作为标签
 # - 过多标签会影响性能
+#
+# ===================================================================
+# 拓扑标签自动注入说明
+#
+# 拓扑标签用于在日志查询时利用网络拓扑信息，实现：
+# 1. 按拓扑层级过滤日志（如只查询核心交换机的日志）
+# 2. 查询受影响设备的日志（如查询连接到故障交换机的所有设备日志）
+# 3. 快速定位故障影响范围
+#
+# 拓扑标签说明:
+# - device_tier: 设备层级
+# - connected_switch: 连接的上级交换机
+# - topology_path: 完整拓扑路径（如 "dc1→core→agg01→access01"）
+#
+# 自动注入方法:
+#
+# 方法 1: 使用脚本自动生成配置（推荐）
+# ------------------------------------------------
+# 创建脚本 scripts/generate_promtail_config.sh:
+#
+# ```bash
+# #!/bin/bash
+# # 读取拓扑发现生成的标签文件
+# TOPOLOGY_FILE="/etc/prometheus/targets/topology-labels.json"
+# PROMTAIL_CONFIG="/etc/promtail/promtail.yml"
+#
+# # 为每个 host 生成配置
+# jq -r '.[] | "  - targets:\n      - localhost\n    labels:\n      job: syslog\n      host: \(.labels.device_name)\n      device_tier: \(.labels.device_tier)\n      connected_switch: \(.labels.connected_switch)\n      topology_path: \"\(.labels.topology_path)\""' "$TOPOLOGY_FILE"
+# ```
+#
+# 方法 2: 使用环境变量
+# ------------------------------------------------
+# 在 docker-compose.yaml 中为每个 Promtail 实例设置环境变量:
+#
+# ```yaml
+# promtail:
+#   environment:
+#     - DEVICE_TIER=core
+#     - CONNECTED_SWITCH=SW-Agg-01
+#     - TOPOLOGY_PATH=dc1->core->agg01
+# ```
+#
+# 然后在 promtail.yml 中使用:
+# ```yaml
+# labels:
+#   device_tier: "{{ env \"DEVICE_TIER\" }}"
+#   connected_switch: "{{ env \"CONNECTED_SWITCH\" }}"
+#   topology_path: "{{ env \"TOPOLOGY_PATH\" }}"
+# ```
+#
+# 方法 3: 使用 file_sd（需要 Promtail 支持）
+# ------------------------------------------------
+# 创建文件 /etc/promtail/targets/topology-labels.json:
+# ```json
+# [
+#   {
+#     "targets": ["192.168.1.10"],
+#     "labels": {
+#       "host": "server-01",
+#       "device_tier": "access",
+#       "connected_switch": "SW-Acc-01",
+#       "topology_path": "dc1→core→agg01→access01"
+#     }
+#   }
+# ]
+# ```
+#
+# 然后在 promtail.yml 中:
+# ```yaml
+# file_sd_configs:
+#   - files:
+#       - /etc/promtail/targets/topology-labels.json
+# ```
+#
+# 拓扑标签查询示例:
+# ------------------------------------------------
+# # 查询核心交换机的所有日志
+# {device_tier="core"}
+#
+# # 查询连接到特定交换机的设备日志
+# {connected_switch="SW-Core-01"}
+#
+# # 查询特定拓扑路径的日志
+# {topology_path=~".*core.*"}
+#
+# # 结合 Metrics 查询
+# {device_tier="core"} |~ "error"
 #
 # ===================================================================

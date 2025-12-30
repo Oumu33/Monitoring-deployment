@@ -1,0 +1,343 @@
+{{ define "wework.title" }}
+{{ if eq .Status "firing" }}🔥 告警触发{{ else }}✅ 告警恢复{{ end }} - {{ .Labels.alertname }}
+{{ end }}
+
+{{ define "wework.content" }}
+{{ if eq .Status "firing" }}🔥 告警触发{{ else }}✅ 告警恢复{{ end }}
+
+**告警级别:** {{ .Labels.severity }}
+**告警数量:** {{ len .Alerts }}
+**触发时间:** {{ (index .Alerts 0).StartsAt.Format "2006-01-02 15:04:05" }}
+
+---
+
+{{ range .Alerts }}
+### 📌 {{ .Labels.alertname }}
+
+**实例:** {{ .Labels.instance }}
+**摘要:** {{ .Annotations.summary }}
+
+**描述:**
+{{ .Annotations.description }}
+
+{{ if .Annotations.prediction_value }}
+**🔮 预测信息:**
+> 预测值: {{ .Annotations.prediction_value }}
+> 当前值: {{ .Annotations.current_value }}
+> 预测质量: {{ .Annotations.prediction_quality }}
+> 预测置信度: {{ .Annotations.prediction_confidence }}
+
+{{ end }}**标签:**
+{{ range $key, $value := .Labels }}- {{ $key }}: {{ $value }}
+{{ end }}
+
+---
+
+{{ end }}
+
+🔗 [查看详情](http://localhost:3000/d/alerts) | 📊 [Grafana](http://localhost:3000)
+{{ end }}
+
+{{ define "wework.card.content" }}
+{
+  "msgtype": "template_card",
+  "template_card": {
+    "card_type": "text_notice",
+    "source": {
+      "desc": "监控系统",
+      "desc_color": 0
+    },
+    "main_title": {
+      "title": "{{ if eq .Status "firing" }}🔥 告警触发{{ else }}✅ 告警恢复{{ end }}",
+      "desc": "{{ .Labels.alertname }}"
+    },
+    "emphasis_content": {
+      "title": "告警级别: {{ .Labels.severity }}",
+      "desc": "告警数量: {{ len .Alerts }}"
+    },
+    "quote_area": {
+      "type": 1,
+      "url": "http://localhost:3000/d/alerts",
+      "title": "点击查看详情",
+      "quote_text": "触发时间: {{ (index .Alerts 0).StartsAt.Format "2006-01-02 15:04:05" }}"
+    },
+    "sub_title_text": "{{ (index .Alerts 0).Annotations.summary }}",
+    "horizontal_content_list": [
+      {
+        "keyname": "实例",
+        "value": "{{ (index .Alerts 0).Labels.instance }}"
+      },
+      {
+        "keyname": "告警级别",
+        "value": "{{ .Labels.severity }}"
+      }
+    ],
+    "jump_list": [
+      {
+        "type": 1,
+        "url": "http://localhost:3000/d/alerts",
+        "title": "查看详情"
+      },
+      {
+        "type": 1,
+        "url": "http://localhost:3000",
+        "title": "Grafana"
+      }
+    ],
+    "card_action": {
+      "type": 1,
+      "url": "http://localhost:3000/d/alerts"
+    }
+  }
+}
+{{ end }}
+
+{{ define "wework.predictive.content" }}
+## 🔮 预测性告警 - {{ .Labels.alertname }}
+
+**实例:** {{ .Labels.instance }}
+**告警级别:** {{ .Labels.severity }}
+**预测时间窗口:** {{ .Annotations.prediction_horizon }}
+**触发时间:** {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+
+---
+
+### 📊 预测详情
+
+| 指标 | 值 |
+|------|-----|
+| 当前值 | {{ .Annotations.current_value }} |
+| 预测值 | **{{ .Annotations.prediction_value }}** |
+| 预测质量 | {{ .Annotations.prediction_quality }} |
+| 预测稳定性 | {{ .Annotations.prediction_stability }} |
+| 预测置信度 | {{ .Annotations.prediction_confidence }} |
+| 预测方法 | {{ .Annotations.prediction_method }} |
+
+---
+
+### 📈 多模型预测对比
+
+| 模型 | 预测值 | 准确度 |
+|------|--------|--------|
+| 线性回归 | {{ .Annotations.linear_prediction }} | {{ .Annotations.linear_accuracy }} |
+| 季节性预测 | {{ .Annotations.seasonal_prediction }} | {{ .Annotations.seasonal_accuracy }} |
+| 多指标预测 | {{ .Annotations.multivariate_prediction }} | {{ .Annotations.multivariate_accuracy }} |
+| 融合预测 | {{ .Annotations.ensemble_prediction }} | {{ .Annotations.ensemble_accuracy }} |
+| **自适应预测** | **{{ .Annotations.prediction_value }}** | **{{ .Annotations.adaptive_accuracy }}** |
+
+---
+
+### 📅 历史对比
+
+| 时间段 | 数值 |
+|--------|------|
+| 昨天同期 | {{ .Annotations.history_yesterday }} |
+| 上周同期 | {{ .Annotations.history_last_week }} |
+| 7 天基线 | {{ .Annotations.history_baseline_7d }} |
+| 历史偏差 | {{ .Annotations.deviation_from_history }} |
+
+---
+
+### 🔄 季节性分析
+
+| 分量 | 值 |
+|------|-----|
+| 趋势分量 | {{ .Annotations.seasonal_trend }} |
+| 季节性分量 | {{ .Annotations.seasonal_seasonal }} |
+| 残差分量 | {{ .Annotations.seasonal_residual }} |
+| 每日基线 | {{ .Annotations.seasonal_daily_baseline }} |
+
+---
+
+### 🎯 建议操作
+
+{{ .Annotations.auto_mitigation_suggestions }}
+
+---
+
+### 🛡️ 预防措施
+
+{{ .Annotations.preventive_measures }}
+
+---
+
+### 📋 标签
+
+{{ range $key, $value := .Labels }}- **{{ $key }}:** {{ $value }}
+{{ end }}
+
+---
+
+🔗 [查看详情](http://localhost:3000/d/alerts) | 📊 [Grafana](http://localhost:3000) | 📖 [运维手册]({{ .Annotations.runbook_url }})
+{{ end }}
+
+{{ define "wework.predictive.card" }}
+{
+  "msgtype": "template_card",
+  "template_card": {
+    "card_type": "text_notice",
+    "source": {
+      "desc": "预测性监控系统",
+      "desc_color": 0
+    },
+    "main_title": {
+      "title": "🔮 预测性告警",
+      "desc": "{{ .Labels.alertname }}"
+    },
+    "emphasis_content": {
+      "title": "实例: {{ .Labels.instance }}",
+      "desc": "预测值: {{ .Annotations.prediction_value }} | 置信度: {{ .Annotations.prediction_confidence }}"
+    },
+    "quote_area": {
+      "type": 1,
+      "url": "http://localhost:3000/d/alerts",
+      "title": "点击查看详情",
+      "quote_text": "预测时间窗口: {{ .Annotations.prediction_horizon }}"
+    },
+    "sub_title_text": "{{ .Annotations.summary }}",
+    "horizontal_content_list": [
+      {
+        "keyname": "当前值",
+        "value": "{{ .Annotations.current_value }}"
+      },
+      {
+        "keyname": "预测值",
+        "value": "{{ .Annotations.prediction_value }}"
+      },
+      {
+        "keyname": "预测质量",
+        "value": "{{ .Annotations.prediction_quality }}"
+      },
+      {
+        "keyname": "预测方法",
+        "value": "{{ .Annotations.prediction_method }}"
+      }
+    ],
+    "jump_list": [
+      {
+        "type": 1,
+        "url": "http://localhost:3000/d/alerts",
+        "title": "查看详情"
+      },
+      {
+        "type": 1,
+        "url": "http://localhost:3000",
+        "title": "Grafana"
+      },
+      {
+        "type": 1,
+        "url": "{{ .Annotations.runbook_url }}",
+        "title": "运维手册"
+      }
+    ],
+    "card_action": {
+      "type": 1,
+      "url": "http://localhost:3000/d/alerts"
+    }
+  }
+}
+{{ end }}
+
+{{ define "wework.rootcause.content" }}
+## 🔴【根因告警】{{ .Labels.alertname }}
+
+**实例:** {{ .Labels.instance }}
+**告警级别:** {{ .Labels.severity }}
+**触发时间:** {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+
+---
+
+### 🎯 根因分析
+
+{{ .Annotations.description }}
+
+---
+
+### 📊 影响范围
+
+| 影响项 | 数量 |
+|--------|------|
+| 受影响设备 | {{ .Annotations.affected_devices }} |
+| 受影响虚拟机 | {{ .Annotations.affected_vms }} |
+| 受影响用户 | {{ .Annotations.affected_users }} |
+
+---
+
+### 🔗 拓扑链路
+
+```
+{{ .Annotations.topology_chain }}
+```
+
+---
+
+### 🚫 被抑制的告警
+
+- 接入交换机告警: {{ .Annotations.suppressed_switches }} 条
+- 服务器告警: {{ .Annotations.suppressed_servers }} 条
+- 网络延迟告警: {{ .Annotations.suppressed_network }} 条
+
+---
+
+### 🎯 处理步骤
+
+{{ .Annotations.resolution_steps }}
+
+---
+
+### 📋 标签
+
+{{ range $key, $value := .Labels }}- **{{ $key }}:** {{ $value }}
+{{ end }}
+
+---
+
+🔗 [查看详情](http://localhost:3000/d/alerts) | 📊 [Grafana](http://localhost:3000) | 📖 [运维手册]({{ .Annotations.runbook_url }})
+{{ end }}
+
+{{ define "wework.metricslogs.content" }}
+## 🔗 Metrics + Logs 关联告警 - {{ .Labels.alertname }}
+
+**实例:** {{ .Labels.instance }}
+**告警级别:** {{ .Labels.severity }}
+**触发时间:** {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+
+---
+
+### 📊 指标信息
+
+{{ .Annotations.metric_summary }}
+
+---
+
+### 📝 日志查询
+
+```logql
+{{ .Annotations.log_query }}
+```
+
+---
+
+### 🎯 处理步骤
+
+{{ .Annotations.resolution_steps }}
+
+---
+
+### 🔗 快速链接
+
+- [查看日志](http://localhost:3000/d/logs-explorer?expr={{ .Annotations.log_query_encoded }})
+- [查看指标](http://localhost:3000/d/metrics?var-instance={{ .Labels.instance }})
+- [拓扑图](http://localhost:3000/d/network-topology)
+
+---
+
+### 📋 标签
+
+{{ range $key, $value := .Labels }}- **{{ $key }}:** {{ $value }}
+{{ end }}
+
+---
+
+🔗 [查看详情](http://localhost:3000/d/alerts) | 📊 [Grafana](http://localhost:3000) | 📖 [运维手册]({{ .Annotations.runbook_url }})
+{{ end }}

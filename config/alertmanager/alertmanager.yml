@@ -139,6 +139,36 @@ receivers:
             <tr><td><strong>处理手册</strong></td><td><a href="{{ .Annotations.runbook_url }}">查看 Runbook</a></td></tr>
             <tr><td><strong>开始时间</strong></td><td>{{ .StartsAt.Format "2006-01-02 15:04:05" }}</td></tr>
           </table>
+
+          <!-- 拓扑上下文 -->
+          {{ if .Labels.device_tier }}
+          <h4 style="color: #666;">📍 拓扑信息</h4>
+          <table border="1" cellpadding="5" style="background-color: #f5f5f5;">
+            <tr><td><strong>设备层级</strong></td><td>{{ .Labels.device_tier }}</td></tr>
+            {{ if .Labels.connected_switch }}<tr><td><strong>连接交换机</strong></td><td>{{ .Labels.connected_switch }}</td></tr>{{ end }}
+            {{ if .Labels.connected_switch_port }}<tr><td><strong>连接端口</strong></td><td>{{ .Labels.connected_switch_port }}</td></tr>{{ end }}
+            {{ if .Labels.topology_path }}<tr><td><strong>拓扑路径</strong></td><td>{{ .Labels.topology_path }}</td></tr>{{ end }}
+            {{ if .Labels.location }}<tr><td><strong>物理位置</strong></td><td>{{ .Labels.location }}</td></tr>{{ end }}
+          </table>
+          {{ end }}
+
+          <!-- 影响范围 -->
+          {{ if .Annotations.affected_devices }}
+          <h4 style="color: #666;">📊 影响范围</h4>
+          <ul>
+            <li>受影响设备: {{ .Annotations.affected_devices }}</li>
+            {{ if .Annotations.affected_users }}<li>受影响用户: {{ .Annotations.affected_users }}</li>{{ end }}
+            {{ if .Annotations.suppressed_alerts }}<li>被抑制告警: {{ .Annotations.suppressed_alerts }}</li>{{ end }}
+          </ul>
+          {{ end }}
+
+          <!-- 快速链接 -->
+          <h4 style="color: #666;">🔗 快速链接</h4>
+          <ul>
+            <li><a href="http://localhost:3000/d/network-topology?var-device={{ .Labels.instance }}">查看拓扑图</a></li>
+            {{ if .Annotations.log_query }}<li><a href="http://localhost:3000/d/logs-explorer?expr={{ .Annotations.log_query | urlquery }}">查看相关日志</a></li>{{ end }}
+            {{ if .Annotations.grafana_url }}<li><a href="{{ .Annotations.grafana_url }}">Grafana Dashboard</a></li>{{ end }}
+          </ul>
           {{ end }}
         send_resolved: true
 
@@ -165,6 +195,23 @@ receivers:
           <p><strong>摘要</strong>: {{ .Annotations.summary }}</p>
           <p><strong>详情</strong>: <pre>{{ .Annotations.description }}</pre></p>
           <p><strong>处理手册</strong>: <a href="{{ .Annotations.runbook_url }}">查看 Runbook</a></p>
+
+          <!-- 拓扑上下文 -->
+          {{ if .Labels.device_tier }}
+          <p style="color: #666;"><strong>📍 拓扑信息</strong></p>
+          <ul>
+            <li>设备层级: {{ .Labels.device_tier }}</li>
+            {{ if .Labels.connected_switch }}<li>连接交换机: {{ .Labels.connected_switch }}</li>{{ end }}
+            {{ if .Labels.topology_path }}<li>拓扑路径: {{ .Labels.topology_path }}</li>{{ end }}
+          </ul>
+          {{ end }}
+
+          <!-- 快速链接 -->
+          <p style="color: #666;"><strong>🔗 快速链接</strong></p>
+          <ul>
+            <li><a href="http://localhost:3000/d/network-topology?var-device={{ .Labels.instance }}">查看拓扑图</a></li>
+            {{ if .Annotations.log_query }}<li><a href="http://localhost:3000/d/logs-explorer?expr={{ .Annotations.log_query | urlquery }}">查看相关日志</a></li>{{ end }}
+          </ul>
           {{ end }}
         send_resolved: true
 

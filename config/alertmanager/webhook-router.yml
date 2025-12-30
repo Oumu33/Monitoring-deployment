@@ -1,0 +1,136 @@
+# ===================================================================
+# Webhook 路由配置
+# 将 Alertmanager 告警转发到飞书、钉钉、企业微信
+# ===================================================================
+
+# 路由规则
+routes:
+  # ===== 预测性告警 =====
+  - match:
+      category: predictive
+    targets:
+      - platform: feishu
+        endpoint: predictive
+      - platform: dingtalk
+        endpoint: predictive
+      - platform: wework
+        endpoint: predictive
+
+  # ===== 紧急预测告警 =====
+  - match:
+      category: predictive
+      priority: P0
+    targets:
+      - platform: feishu
+        endpoint: predictive-critical
+      - platform: dingtalk
+        endpoint: predictive-critical
+      - platform: wework
+        endpoint: predictive-critical
+
+  # ===== 根因告警 =====
+  - match:
+      root_cause: "true"
+    targets:
+      - platform: feishu
+        endpoint: root-cause
+      - platform: dingtalk
+        endpoint: root-cause
+      - platform: wework
+        endpoint: root-cause
+
+  # ===== Metrics + Logs 联动告警 =====
+  - match:
+      subcategory: logs
+    targets:
+      - platform: feishu
+        endpoint: metrics-logs
+      - platform: dingtalk
+        endpoint: metrics-logs
+      - platform: wework
+        endpoint: metrics-logs
+
+  # ===== 硬件告警 =====
+  - match:
+      category: hardware
+    targets:
+      - platform: feishu
+        endpoint: hardware
+      - platform: dingtalk
+        endpoint: hardware
+      - platform: wework
+        endpoint: hardware
+
+  # ===== 严重告警 =====
+  - match:
+      severity: critical
+    targets:
+      - platform: feishu
+        endpoint: critical
+      - platform: dingtalk
+        endpoint: critical
+      - platform: wework
+        endpoint: critical
+
+  # ===== 警告告警 =====
+  - match:
+      severity: warning
+    targets:
+      - platform: feishu
+        endpoint: warning
+      - platform: dingtalk
+        endpoint: warning
+      - platform: wework
+        endpoint: warning
+
+  # ===== 默认路由 =====
+  - match: {}
+    targets:
+      - platform: feishu
+        endpoint: default
+      - platform: dingtalk
+        endpoint: default
+      - platform: wework
+        endpoint: default
+
+# 平台配置
+platforms:
+  feishu:
+    base_url: http://feishu-webhook-adapter:8080
+    timeout: 10s
+
+  dingtalk:
+    base_url: http://dingtalk-webhook-adapter:8060
+    timeout: 10s
+
+  wework:
+    base_url: http://wework-webhook-adapter:8080
+    timeout: 10s
+
+# 重试配置
+retry:
+  max_attempts: 3
+  backoff: 2s
+  max_backoff: 30s
+
+# 日志配置
+logging:
+  level: info
+  format: json
+
+# ===================================================================
+# 使用说明:
+#
+# 1. 配置路由规则:
+#    - 根据告警类型配置不同的路由
+#    - 可以添加更多的匹配条件
+#
+# 2. 配置平台端点:
+#    - 确保各平台的适配器服务正常运行
+#    - 检查端点配置是否正确
+#
+# 3. 测试路由:
+#    - 发送测试告警
+#    - 查看日志确认路由是否正确
+#
+# ===================================================================

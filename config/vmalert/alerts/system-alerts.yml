@@ -57,18 +57,30 @@
           description: |
             **主机**: {{ $labels.instance }}
             **CPU 使用率**: {{ $value | humanizePercentage }}
+            **告警持续时间**: {{ $labels.alert_duration }} 分钟
 
-            **自动日志查询**:
+            **自动日志查询**（动态时间窗口）:
             ```logql
-            {host="{{ $labels.instance }}"} 
-            |~ "cpu|CPU|process|Process" 
+            {host="{{ $labels.instance }}"}
+            |~ "cpu|CPU|process|Process"
             | level != "debug"
+            | line_format "{{.timestamp}} {{.level}} {{.message}}"
             ```
 
             **处理步骤**:
             1. 查看上述日志查询结果
             2. 识别高 CPU 进程
             3. 优化或终止异常进程
+
+            **相关指标**:
+            - 当前 CPU 使用率: {{ $value | humanizePercentage }}
+            - 1 小时平均值: {{ $labels.cpu_avg_1h | humanizePercentage }}
+            - 趋势斜率: {{ $labels.cpu_trend_slope_1h }}%/秒
+
+            **历史对比**:
+            - 昨天同期: {{ $labels.cpu_history_yesterday | humanizePercentage }}
+            - 7 天基线: {{ $labels.cpu_history_baseline_7d | humanizePercentage }}
+            - 历史偏差: {{ $labels.cpu_deviation_from_history }}%
           log_query: '{host="{{ $labels.instance }}"} |~ "cpu|CPU|process|Process" | level != "debug"'
           grafana_url: "http://localhost:3000/d/logs-explorer?expr={host=%22{{ $labels.instance }}%22}%20%7C~%20%22cpu%7CCPU%7Cprocess%7CProcess%22%20%7C%20level%20!=%20%22debug%22"
           runbook_url: "https://your-wiki.com/runbooks/high-cpu-usage"
@@ -89,18 +101,34 @@
           description: |
             **主机**: {{ $labels.instance }}
             **内存使用率**: {{ $value | humanizePercentage }}
+            **告警持续时间**: {{ $labels.alert_duration }} 分钟
 
-            **自动日志查询**:
+            **自动日志查询**（动态时间窗口）:
             ```logql
-            {host="{{ $labels.instance }}"} 
-            |~ "oom|OOM|memory|Memory" 
+            {host="{{ $labels.instance }}"}
+            |~ "oom|OOM|memory|Memory"
             | level =~ "error|warning"
+            | line_format "{{.timestamp}} {{.level}} {{.message}}"
             ```
 
             **处理步骤**:
             1. 查看上述日志查询结果
             2. 检查是否有 OOM Killer
             3. 优化内存使用或增加内存
+
+            **相关指标**:
+            - 当前内存使用率: {{ $value | humanizePercentage }}
+            - 1 小时平均值: {{ $labels.mem_avg_1h | humanizePercentage }}
+            - 趋势斜率: {{ $labels.mem_trend_slope_1h }}%/秒
+
+            **历史对比**:
+            - 昨天同期: {{ $labels.mem_history_yesterday | humanizePercentage }}
+            - 7 天基线: {{ $labels.mem_history_baseline_7d | humanizePercentage }}
+            - 历史偏差: {{ $labels.mem_deviation_from_history }}%
+
+            **预测信息**:
+            - 1 小时后预测: {{ $labels.mem_predicted_1h | humanizePercentage }}
+            - 预测置信度: {{ $labels.mem_prediction_confidence | printf "%.0f" }}%
           log_query: '{host="{{ $labels.instance }}"} |~ "oom|OOM|memory|Memory" | level =~ "error|warning"'
           grafana_url: "http://localhost:3000/d/logs-explorer?expr={host=%22{{ $labels.instance }}%22}%20%7C~%20%22oom%7COOM%7Cmemory%7CMemory%22%20%7C%20level%20=~%20%22error%7Cwarning%22"
           runbook_url: "https://your-wiki.com/runbooks/high-memory-usage"
@@ -122,18 +150,28 @@
             **主机**: {{ $labels.instance }}
             **磁盘**: {{ $labels.device }}
             **IO 使用率**: {{ $value | humanizePercentage }}
+            **告警持续时间**: {{ $labels.alert_duration }} 分钟
 
-            **自动日志查询**:
+            **自动日志查询**（动态时间窗口）:
             ```logql
-            {host="{{ $labels.instance }}"} 
-            |~ "disk|Disk|io|IO|iowait" 
+            {host="{{ $labels.instance }}"}
+            |~ "disk|Disk|io|IO|iowait"
             | level != "debug"
+            | line_format "{{.timestamp}} {{.level}} {{.message}}"
             ```
 
             **处理步骤**:
             1. 查看上述日志查询结果
             2. 识别高 IO 进程
             3. 优化磁盘访问或升级存储
+
+            **相关指标**:
+            - 当前 IO 使用率: {{ $value | humanizePercentage }}
+            - 磁盘使用率: {{ $labels.disk_usage_percentage | humanizePercentage }}
+
+            **预测信息**:
+            - 7 天后预测使用率: {{ $labels.disk_predicted_7d | humanizePercentage }}
+            - 预计满时间: {{ $labels.time_until_full }} 天
           log_query: '{host="{{ $labels.instance }}"} |~ "disk|Disk|io|IO|iowait" | level != "debug"'
           grafana_url: "http://localhost:3000/d/logs-explorer?expr={host=%22{{ $labels.instance }}%22}%20%7C~%20%22disk%7CDisk%7Cio%7CIO%7Ciowait%22%20%7C%20level%20!=%20%22debug%22"
           runbook_url: "https://your-wiki.com/runbooks/high-disk-io"
@@ -495,6 +533,392 @@
           resolved_count: "{{ $value }}"
           auto_confirmation: true
           runbook_url: "https://your-wiki.com/runbooks/auto-resolution"
+
+# ===================================================================
+# 根因分析告警规则
+# 用途: 专门标注哪些告警是根因，帮助快速定位问题
+# ===================================================================
+
+  - name: root-cause-analysis-alerts
+    interval: 30s
+    rules:
+
+      # 根因分析：核心交换机故障
+      - alert: RootCauseCoreSwitchDown
+        expr: |
+          up{job="snmp-exporter", device_tier="core"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: root-cause
+          component: switch
+          root_cause: true
+        annotations:
+          summary: "🔴【根因】核心交换机 {{ $labels.instance }} 故障"
+          description: |
+            **核心交换机**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+
+            **根因分析**:
+            - 这是根因告警
+            - 影响范围：{{ $labels.affected_devices }} 台设备
+            - 影响用户：{{ $labels.affected_users }} 人
+
+            **影响链路**:
+            {{ $labels.topology_chain }}
+
+            **处理步骤**:
+            1. 立即检查核心交换机状态
+            2. 查看拓扑图确认影响范围
+            3. 联系网络团队紧急处理
+
+            **被抑制的告警**:
+            - 接入交换机告警（{{ $labels.suppressed_switches }} 条）
+            - 服务器告警（{{ $labels.suppressed_servers }} 条）
+            - 网络延迟告警（{{ $labels.suppressed_network }} 条）
+          root_cause: true
+          affected_devices: "{{ $labels.affected_devices }}"
+          topology_chain: "{{ $labels.topology_chain }}"
+          suppressed_switches: "{{ $labels.suppressed_switches }}"
+          suppressed_servers: "{{ $labels.suppressed_servers }}"
+          suppressed_network: "{{ $labels.suppressed_network }}"
+          runbook_url: "https://your-wiki.com/runbooks/root-cause-core-switch-down"
+
+      # 根因分析：服务器硬件故障
+      - alert: RootCauseHardwareFailure
+        expr: |
+          redfish_system_health_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: root-cause
+          component: hardware
+          root_cause: true
+        annotations:
+          summary: "🔴【根因】服务器 {{ $labels.instance }} 硬件故障"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **序列号**: {{ $labels.serial_number }}
+
+            **根因分析**:
+            - 这是根因告警
+            - 故障组件：{{ $labels.failed_component }}
+            - 影响：{{ $labels.impact }}
+
+            **影响链路**:
+            {{ $labels.impact_chain }}
+
+            **处理步骤**:
+            1. 检查硬件状态
+            2. 迁移虚拟机（如需要）
+            3. 更换故障硬件
+
+            **被抑制的告警**:
+            - CPU 温度告警（{{ $labels.suppressed_cpu }} 条）
+            - 性能告警（{{ $labels.suppressed_performance }} 条）
+          root_cause: true
+          failed_component: "{{ $labels.failed_component }}"
+          impact: "{{ $labels.impact }}"
+          impact_chain: "{{ $labels.impact_chain }}"
+          suppressed_cpu: "{{ $labels.suppressed_cpu }}"
+          suppressed_performance: "{{ $labels.suppressed_performance }}"
+          runbook_url: "https://your-wiki.com/runbooks/root-cause-hardware-failure"
+
+      # 根因分析：VictoriaMetrics 宕机
+      - alert: RootCauseVictoriaMetricsDown
+        expr: |
+          up{job="victoriametrics"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: root-cause
+          component: monitoring
+          root_cause: true
+        annotations:
+          summary: "🔴【根因】VictoriaMetrics 时序数据库宕机"
+          description: |
+            **根因分析**:
+            - 这是根因告警
+            - 影响：所有监控数据无法存储和查询
+            - 影响范围：整个监控系统
+
+            **处理步骤**:
+            1. 检查数据库进程状态
+            2. 检查磁盘空间
+            3. 重启服务
+
+            **被抑制的告警**:
+            - 所有告警（{{ $labels.suppressed_alerts }} 条）
+          root_cause: true
+          scope: "entire-monitoring-system"
+          suppressed_alerts: "{{ $labels.suppressed_alerts }}"
+          runbook_url: "https://your-wiki.com/runbooks/root-cause-victoriametrics-down"
+
+      # 根因分析：vmagent 宕机
+      - alert: RootCauseVMAgentDown
+        expr: |
+          up{job="vmagent"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: root-cause
+          component: monitoring
+          root_cause: true
+        annotations:
+          summary: "🔴【根因】vmagent 采集服务宕机"
+          description: |
+            **根因分析**:
+            - 这是根因告警
+            - 影响：所有监控数据无法采集
+            - 影响范围：所有采集目标
+
+            **处理步骤**:
+            1. 检查 vmagent 进程状态
+            2. 检查配置文件
+            3. 重启服务
+
+            **被抑制的告警**:
+            - 采集目标宕机告警（{{ $labels.suppressed_targets }} 条）
+          root_cause: true
+          scope: "all-collection-targets"
+          suppressed_targets: "{{ $labels.suppressed_targets }}"
+          runbook_url: "https://your-wiki.com/runbooks/root-cause-vmagent-down"
+
+      # 根因分析：数据中心停电
+      - alert: RootCauseDatacenterPowerLoss
+        expr: |
+          count(up{job="snmp-exporter", datacenter=~".*"} == 0) by (datacenter)
+          / count(up{job="snmp-exporter", datacenter=~".*"}) by (datacenter) > 0.8
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: root-cause
+          component: infrastructure
+          root_cause: true
+        annotations:
+          summary: "🔴【根因】数据中心 {{ $labels.datacenter }} 停电"
+          description: |
+            **数据中心**: {{ $labels.datacenter }}
+
+            **根因分析**:
+            - 这是根因告警
+            - 影响：{{ $value | humanizePercentage }} 设备离线
+            - 影响范围：整个数据中心
+
+            **处理步骤**:
+            1. 确认停电原因
+            2. 启动备用电源
+            3. 通知数据中心团队
+
+            **被抑制的告警**:
+            - 所有设备告警（{{ $labels.suppressed_alerts }} 条）
+          root_cause: true
+          scope: "entire-datacenter"
+          affected_devices: "{{ $labels.affected_devices }}"
+          suppressed_alerts: "{{ $labels.suppressed_alerts }}"
+          runbook_url: "https://your-wiki.com/runbooks/root-cause-datacenter-power-loss"
+
+      # 根因分析：网络分区
+      - alert: RootCauseNetworkPartition
+        expr: |
+          count(up{job="snmp-exporter"} == 0) by (network_segment) > 0
+          and count(up{job="snmp-exporter"} == 0) by (network_segment)
+          / count(up{job="snmp-exporter"}) by (network_segment) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: root-cause
+          component: network
+          root_cause: true
+        annotations:
+          summary: "🔴【根因】网络分区 {{ $labels.network_segment }} 检测到网络分区"
+          description: |
+            **网络分区**: {{ $labels.network_segment }}
+
+            **根因分析**:
+            - 这是根因告警
+            - 影响：{{ $value | humanizePercentage }} 设备无法访问
+            - 可能原因：核心交换机故障、光纤中断
+
+            **处理步骤**:
+            1. 检查核心交换机状态
+            2. 检查光纤连接
+            3. 联系网络团队
+
+            **被抑制的告警**:
+            - 设备宕机告警（{{ $labels.suppressed_devices }} 条）
+            - 网络延迟告警（{{ $labels.suppressed_network }} 条）
+          root_cause: true
+          possible_causes: "核心交换机故障、光纤中断、路由配置错误"
+          suppressed_devices: "{{ $labels.suppressed_devices }}"
+          suppressed_network: "{{ $labels.suppressed_network }}"
+          runbook_url: "https://your-wiki.com/runbooks/root-cause-network-partition"
+
+      # 根因分析：存储路径故障
+      - alert: RootCauseStoragePathDown
+        expr: |
+          vsphere_storage_path_state != 2
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: root-cause
+          component: storage
+          root_cause: true
+        annotations:
+          summary: "🔴【根因】存储路径 {{ $labels.storage_path }} 故障"
+          description: |
+            **存储路径**: {{ $labels.storage_path }}
+            **ESXi 主机**: {{ $labels.esxhostname }}
+
+            **根因分析**:
+            - 这是根因告警
+            - 影响：{{ $labels.affected_vms }} 台虚拟机磁盘 IO 异常
+            - 可能原因：存储阵列故障、光纤中断
+
+            **处理步骤**:
+            1. 检查存储阵列状态
+            2. 检查光纤连接
+            3. 迁移虚拟机到其他存储
+
+            **被抑制的告警**:
+            - VM 磁盘 IO 告警（{{ $labels.suppressed_vms }} 条）
+            - VM 磁盘延迟告警（{{ $labels.suppressed_latency }} 条）
+          root_cause: true
+          affected_vms: "{{ $labels.affected_vms }}"
+          possible_causes: "存储阵列故障、光纤中断、配置错误"
+          suppressed_vms: "{{ $labels.suppressed_vms }}"
+          suppressed_latency: "{{ $labels.suppressed_latency }}"
+          runbook_url: "https://your-wiki.com/runbooks/root-cause-storage-path-down"
+
+      # 根因分析：数据库主库故障
+      - alert: RootCauseDatabaseMasterDown
+        expr: |
+          up{job="mysql", role="master"} == 0
+          and on(service_group) (
+            up{job="mysql", role="slave"} == 1
+          )
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: root-cause
+          component: database
+          root_cause: true
+        annotations:
+          summary: "🔴【根因】数据库主库 {{ $labels.instance }} 故障"
+          description: |
+            **数据库**: {{ $labels.instance }}
+            **服务组**: {{ $labels.service_group }}
+
+            **根因分析**:
+            - 这是根因告警
+            - 影响：所有依赖该数据库的应用
+            - 自动故障转移：已触发
+
+            **处理步骤**:
+            1. 确认从库已提升为主库
+            2. 检查主库故障原因
+            3. 修复主库后重新配置主从复制
+
+            **被抑制的告警**:
+            - 应用服务告警（{{ $labels.suppressed_apps }} 条）
+          root_cause: true
+          service_group: "{{ $labels.service_group }}"
+          auto_failover: true
+          new_master: "{{ $labels.new_master }}"
+          suppressed_apps: "{{ $labels.suppressed_apps }}"
+          runbook_url: "https://your-wiki.com/runbooks/root-cause-database-master-down"
+
+      # 根因分析：DNS 服务器故障
+      - alert: RootCauseDNSDown
+        expr: |
+          probe_dns_lookup_success == 0
+          and on(dns_group) (
+            count(probe_dns_lookup_success) by (dns_group) > 1
+          )
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: root-cause
+          component: dns
+          root_cause: true
+        annotations:
+          summary: "🔴【根因】DNS 服务器 {{ $labels.instance }} 故障"
+          description: |
+            **DNS 服务器**: {{ $labels.instance }}
+            **DNS 组**: {{ $labels.dns_group }}
+
+            **根因分析**:
+            - 这是根因告警
+            - 影响：所有依赖该 DNS 的服务
+            - 自动故障转移：已触发
+
+            **处理步骤**:
+            1. 确认 DNS 切换已执行
+            2. 检查主 DNS 服务器状态
+            3. 修复主 DNS 后手动切换回主 DNS
+
+            **被抑制的告警**:
+            - 网站不可达告警（{{ $labels.suppressed_websites }} 条）
+            - 服务连接失败告警（{{ $labels.suppressed_services }} 条）
+          root_cause: true
+          dns_group: "{{ $labels.dns_group }}"
+          auto_failover: true
+          backup_dns: "{{ $labels.backup_dns }}"
+          suppressed_websites: "{{ $labels.suppressed_websites }}"
+          suppressed_services: "{{ $labels.suppressed_services }}"
+          runbook_url: "https://your-wiki.com/runbooks/root-cause-dns-down"
+
+      # 根因分析：交换机端口风暴
+      - alert: RootCauseSwitchPortStorm
+        expr: |
+          rate(ifHCInOctets[5m]) * 8 / ifHighSpeed > 0.9
+          and rate(ifHCOutOctets[5m]) * 8 / ifHighSpeed > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: root-cause
+          component: switch
+          root_cause: true
+        annotations:
+          summary: "🔴【根因】交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 检测到流量风暴"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **端口**: {{ $labels.ifDescr }}
+
+            **根因分析**:
+            - 这是根因告警
+            - 影响：{{ $labels.affected_devices }} 台设备网络异常
+            - 可能原因：环路、广播风暴、DDoS 攻击
+
+            **处理步骤**:
+            1. 查看拓扑图确认环路
+            2. 关闭风暴端口
+            3. 检查网络配置
+
+            **被抑制的告警**:
+            - 网络延迟告警（{{ $labels.suppressed_latency }} 条）
+            - 丢包率告警（{{ $labels.suppressed_packetloss }} 条）
+            - CPU 过高告警（{{ $labels.suppressed_cpu }} 条）
+          root_cause: true
+          affected_devices: "{{ $labels.affected_devices }}"
+          possible_causes: "环路、广播风暴、DDoS 攻击"
+          suppressed_latency: "{{ $labels.suppressed_latency }}"
+          suppressed_packetloss: "{{ $labels.suppressed_packetloss }}"
+          suppressed_cpu: "{{ $labels.suppressed_cpu }}"
+          runbook_url: "https://your-wiki.com/runbooks/root-cause-switch-port-storm"
 
 groups:
   - name: monitoring-system-alerts

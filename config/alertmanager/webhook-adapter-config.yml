@@ -1,0 +1,204 @@
+# ===================================================================
+# Alertmanager Webhook 适配器配置
+# 支持飞书、钉钉、企业微信
+# ===================================================================
+
+templates:
+  - /etc/alertmanager/templates/feishu-card.tmpl
+  - /etc/alertmanager/templates/dingtalk-enhanced.tmpl
+  - /etc/alertmanager/templates/wework-enhanced.tmpl
+
+# ===== 飞书配置 =====
+feishu:
+  # 默认飞书群
+  default:
+    webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_WEBHOOK_URL
+    secret: YOUR_SECRET
+    msg_type: interactive
+    template: feishu.card.content
+
+  # 预测性告警群
+  predictive:
+    webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/PREDICTIVE_WEBHOOK_URL
+    secret: PREDICTIVE_SECRET
+    msg_type: interactive
+    template: feishu.predictive.alert
+
+  # 紧急预测告警群
+  predictive-critical:
+    webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/PREDICTIVE_CRITICAL_WEBHOOK_URL
+    secret: PREDICTIVE_CRITICAL_SECRET
+    msg_type: interactive
+    template: feishu.predictive.alert
+
+  # 根因告警群
+  root-cause:
+    webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/ROOT_CAUSE_WEBHOOK_URL
+    secret: ROOT_CAUSE_SECRET
+    msg_type: interactive
+    template: feishu.card.content
+
+  # Metrics + Logs 联动告警群
+  metrics-logs:
+    webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/METRICS_LOGS_WEBHOOK_URL
+    secret: METRICS_LOGS_SECRET
+    msg_type: interactive
+    template: feishu.card.content
+
+  # 硬件告警群
+  hardware:
+    webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/HARDWARE_WEBHOOK_URL
+    secret: HARDWARE_SECRET
+    msg_type: interactive
+    template: feishu.card.content
+
+  # 严重告警群
+  critical:
+    webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/CRITICAL_WEBHOOK_URL
+    secret: CRITICAL_SECRET
+    msg_type: interactive
+    template: feishu.card.content
+
+  # 警告告警群
+  warning:
+    webhook_url: https://open.feishu.cn/open-apis/bot/v2/hook/WARNING_WEBHOOK_URL
+    secret: WARNING_SECRET
+    msg_type: interactive
+    template: feishu.card.content
+
+# ===== 钉钉配置 =====
+dingtalk:
+  # 默认钉钉群
+  default:
+    webhook_url: https://oapi.dingtalk.com/robot/send?access_token=YOUR_ACCESS_TOKEN
+    secret: YOUR_SECRET
+    msg_type: markdown
+    template: dingtalk.content
+
+  # 预测性告警群
+  predictive:
+    webhook_url: https://oapi.dingtalk.com/robot/send?access_token=PREDICTIVE_ACCESS_TOKEN
+    secret: PREDICTIVE_SECRET
+    msg_type: markdown
+    template: dingtalk.predictive.content
+
+  # 紧急预测告警群
+  predictive-critical:
+    webhook_url: https://oapi.dingtalk.com/robot/send?access_token=PREDICTIVE_CRITICAL_ACCESS_TOKEN
+    secret: PREDICTIVE_CRITICAL_SECRET
+    msg_type: markdown
+    template: dingtalk.predictive.content
+
+  # 根因告警群
+  root-cause:
+    webhook_url: https://oapi.dingtalk.com/robot/send?access_token=ROOT_CAUSE_ACCESS_TOKEN
+    secret: ROOT_CAUSE_SECRET
+    msg_type: markdown
+    template: dingtalk.rootcause.content
+
+  # Metrics + Logs 联动告警群
+  metrics-logs:
+    webhook_url: https://oapi.dingtalk.com/robot/send?access_token=METRICS_LOGS_ACCESS_TOKEN
+    secret: METRICS_LOGS_SECRET
+    msg_type: markdown
+    template: dingtalk.metricslogs.content
+
+  # 硬件告警群
+  hardware:
+    webhook_url: https://oapi.dingtalk.com/robot/send?access_token=HARDWARE_ACCESS_TOKEN
+    secret: HARDWARE_SECRET
+    msg_type: markdown
+    template: dingtalk.hardware.content
+
+  # 严重告警群
+  critical:
+    webhook_url: https://oapi.dingtalk.com/robot/send?access_token=CRITICAL_ACCESS_TOKEN
+    secret: CRITICAL_SECRET
+    msg_type: markdown
+    template: dingtalk.content
+
+  # 警告告警群
+  warning:
+    webhook_url: https://oapi.dingtalk.com/robot/send?access_token=WARNING_ACCESS_TOKEN
+    secret: WARNING_SECRET
+    msg_type: markdown
+    template: dingtalk.content
+
+# ===== 企业微信配置 =====
+wework:
+  # 默认企业微信群
+  default:
+    webhook_url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+    msg_type: markdown
+    template: wework.content
+
+  # 预测性告警群
+  predictive:
+    webhook_url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=PREDICTIVE_KEY
+    msg_type: template_card
+    template: wework.predictive.card
+
+  # 紧急预测告警群
+  predictive-critical:
+    webhook_url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=PREDICTIVE_CRITICAL_KEY
+    msg_type: template_card
+    template: wework.predictive.card
+
+  # 根因告警群
+  root-cause:
+    webhook_url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=ROOT_CAUSE_KEY
+    msg_type: markdown
+    template: wework.rootcause.content
+
+  # Metrics + Logs 联动告警群
+  metrics-logs:
+    webhook_url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=METRICS_LOGS_KEY
+    msg_type: markdown
+    template: wework.metricslogs.content
+
+  # 硬件告警群
+  hardware:
+    webhook_url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=HARDWARE_KEY
+    msg_type: markdown
+    template: wework.content
+
+  # 严重告警群
+  critical:
+    webhook_url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=CRITICAL_KEY
+    msg_type: markdown
+    template: wework.content
+
+  # 警告告警群
+  warning:
+    webhook_url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=WARNING_KEY
+    msg_type: markdown
+    template: wework.content
+
+# ===================================================================
+# 使用说明:
+#
+# 1. 获取 Webhook URL:
+#
+#    飞书:
+#    - 打开飞书群聊
+#    - 点击群设置 -> 群机器人 -> 添加机器人 -> 自定义机器人
+#    - 复制 Webhook URL 和密钥
+#
+#    钉钉:
+#    - 打开钉钉群聊
+#    - 点击群设置 -> 智能群助手 -> 添加机器人 -> 自定义机器人
+#    - 设置安全设置（推荐使用加签方式）
+#    - 复制 Webhook 地址和加签密钥
+#
+#    企业微信:
+#    - 打开企业微信群聊
+#    - 点击群设置 -> 群机器人 -> 添加机器人
+#    - 复制 Webhook URL
+#
+# 2. 替换配置中的 YOUR_WEBHOOK_URL、YOUR_SECRET、YOUR_KEY 等占位符
+#
+# 3. 部署 Webhook 适配器服务
+#
+# 4. 测试告警通知
+#
+# ===================================================================

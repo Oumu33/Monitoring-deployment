@@ -1,0 +1,851 @@
+# ===================================================================
+# 预测性分析 Recording Rules
+# 用途: 基于历史趋势预测未来指标值
+# 核心算法: 线性回归 + 移动平均 + 趋势分析
+# ===================================================================
+
+groups:
+  - name: predictive-analysis-cpu
+    interval: 1m
+    rules:
+
+      # ===== CPU 使用率预测 =====
+
+      # 1. 计算 CPU 使用率
+      - record: host:cpu:usage:percentage
+        expr: |
+          (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100
+
+      # 2. 计算 1 小时线性回归斜率（趋势）
+      # 斜率 > 0 表示上升趋势，< 0 表示下降趋势
+      - record: host:cpu:usage:trend:slope_1h
+        expr: |
+          linear_regression(host:cpu:usage:percentage[1h]).slope
+
+      # 3. 计算 1 小时线性回归截距
+      - record: host:cpu:usage:trend:intercept_1h
+        expr: |
+          linear_regression(host:cpu:usage:percentage[1h]).intercept
+
+      # 4. 预测 1 小时后的 CPU 使用率
+      - record: host:cpu:usage:predicted_1h
+        expr: |
+          host:cpu:usage:trend:slope_1h * 3600 + host:cpu:usage:trend:intercept_1h
+
+      # 5. 计算 2 小时后的预测值
+      - record: host:cpu:usage:predicted_2h
+        expr: |
+          host:cpu:usage:trend:slope_1h * 7200 + host:cpu:usage:trend:intercept_1h
+
+      # 6. 计算移动平均（平滑波动）
+      - record: host:cpu:usage:avg_5m
+        expr: |
+          avg_over_time(host:cpu:usage:percentage[5m])
+
+      - record: host:cpu:usage:avg_15m
+        expr: |
+          avg_over_time(host:cpu:usage:percentage[15m])
+
+      - record: host:cpu:usage:avg_1h
+        expr: |
+          avg_over_time(host:cpu:usage:percentage[1h])
+
+      # 7. 计算标准差（波动性）
+      - record: host:cpu:usage:stddev_1h
+        expr: |
+          stddev_over_time(host:cpu:usage:percentage[1h])
+
+      # 8. 计算变异系数（CV = 标准差 / 均值）
+      - record: host:cpu:usage:cv_1h
+        expr: |
+          host:cpu:usage:stddev_1h / host:cpu:usage:avg_1h
+
+      # 9. 检测异常增长（当前值 > 均值 + 2倍标准差）
+      - record: host:cpu:usage:anomaly_score
+        expr: |
+          (host:cpu:usage:percentage - host:cpu:usage:avg_1h) / host:cpu:usage:stddev_1h
+
+      # ===== 历史同期对比预测 =====
+
+      # 10. 计算昨天同一时间窗口的 CPU 使用率（对比 24 小时前）
+      - record: host:cpu:usage:history:same_time:yesterday
+        expr: |
+          host:cpu:usage:percentage offset 24h
+
+      # 11. 计算上周同一时间窗口的 CPU 使用率（对比 7 天前）
+      - record: host:cpu:usage:history:same_time:last_week
+        expr: |
+          host:cpu:usage:percentage offset 168h
+
+      # 12. 计算过去 7 天同一时间窗口的平均值（周期性基线）
+      - record: host:cpu:usage:history:baseline:7d
+        expr: |
+          avg_over_time(host:cpu:usage:percentage[7d:1d])
+
+      # 13. 计算当前值与历史同期的偏差百分比
+      - record: host:cpu:usage:deviation:from_history
+        expr: |
+          (host:cpu:usage:percentage - host:cpu:usage:history:baseline:7d) / host:cpu:usage:history:baseline:7d * 100
+
+      # 14. 检测周期性异常（当前值超出历史同期 2 倍标准差）
+      - record: host:cpu:usage:seasonal:anomaly_score
+        expr: |
+          (host:cpu:usage:percentage - avg_over_time(host:cpu:usage:percentage[7d:1d]))
+          / stddev_over_time(host:cpu:usage:percentage[7d:1d])
+
+      # 15. 计算预测置信度（基于历史波动性）
+      # CV < 0.2: 高置信度, CV 0.2-0.4: 中等, CV > 0.4: 低置信度
+      - record: host:cpu:usage:prediction:confidence
+        expr: |
+          1 - min(host:cpu:usage:cv_1h / 0.5, 1)
+
+      # ===== 多时间窗口融合预测 =====
+
+      # 16. 短期预测（15分钟）- 捕捉突发变化
+      - record: host:cpu:usage:predicted:15m
+        expr: |
+          linear_regression(host:cpu:usage:percentage[15m]).slope * 900
+          + linear_regression(host:cpu:usage:percentage[15m]).intercept
+
+      # 17. 中期预测（1小时）- 捕捉短期趋势
+      - record: host:cpu:usage:predicted:1h
+        expr: |
+          linear_regression(host:cpu:usage:percentage[1h]).slope * 3600
+          + linear_regression(host:cpu:usage:percentage[1h]).intercept
+
+      # 18. 长期预测（6小时）- 捕捉稳定趋势
+      - record: host:cpu:usage:predicted:6h
+        expr: |
+          linear_regression(host:cpu:usage:percentage[6h]).slope * 21600
+          + linear_regression(host:cpu:usage:percentage[6h]).intercept
+
+      # 19. 融合预测（加权平均）
+      # 权重策略：短期 20% + 中期 50% + 长期 30%
+      - record: host:cpu:usage:predicted:ensemble
+        expr: |
+          0.2 * host:cpu:usage:predicted:15m
+          + 0.5 * host:cpu:usage:predicted:1h
+          + 0.3 * host:cpu:usage:predicted:6h
+
+      # 20. 动态权重调整（基于波动性）
+      # 波动大时增加短期权重，波动小时增加长期权重
+      - record: host:cpu:usage:predicted:dynamic
+        expr: |
+          (1 - min(host:cpu:usage:cv_1h / 0.3, 1)) * host:cpu:usage:predicted:15m * 0.3
+          + host:cpu:usage:predicted:1h * 0.5
+          + min(host:cpu:usage:cv_1h / 0.3, 1) * host:cpu:usage:predicted:6h * 0.3
+
+  - name: predictive-analysis-memory
+    interval: 1m
+    rules:
+
+      # ===== 内存使用率预测 =====
+
+      # 1. 计算内存使用率
+      - record: host:memory:usage:percentage
+        expr: |
+          (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100
+
+      # 2. 计算 1 小时趋势斜率
+      - record: host:memory:usage:trend:slope_1h
+        expr: |
+          linear_regression(host:memory:usage:percentage[1h]).slope
+
+      # 3. 计算 1 小时后预测值
+      - record: host:memory:usage:predicted_1h
+        expr: |
+          host:memory:usage:trend:slope_1h * 3600 + linear_regression(host:memory:usage:percentage[1h]).intercept
+
+      # 4. 计算 2 小时后预测值
+      - record: host:memory:usage:predicted_2h
+        expr: |
+          host:memory:usage:trend:slope_1h * 7200 + linear_regression(host:memory:usage:percentage[1h]).intercept
+
+      # 5. 计算移动平均
+      - record: host:memory:usage:avg_1h
+        expr: |
+          avg_over_time(host:memory:usage:percentage[1h])
+
+      # 6. 计算标准差
+      - record: host:memory:usage:stddev_1h
+        expr: |
+          stddev_over_time(host:memory:usage:percentage[1h])
+
+      # 7. 计算异常评分
+      - record: host:memory:usage:anomaly_score
+        expr: |
+          (host:memory:usage:percentage - host:memory:usage:avg_1h) / host:memory:usage:stddev_1h
+
+      # ===== 历史同期对比预测 =====
+
+      # 8. 计算昨天同一时间窗口的内存使用率
+      - record: host:memory:usage:history:same_time:yesterday
+        expr: |
+          host:memory:usage:percentage offset 24h
+
+      # 9. 计算上周同一时间窗口的内存使用率
+      - record: host:memory:usage:history:same_time:last_week
+        expr: |
+          host:memory:usage:percentage offset 168h
+
+      # 10. 计算过去 7 天同一时间窗口的平均值
+      - record: host:memory:usage:history:baseline:7d
+        expr: |
+          avg_over_time(host:memory:usage:percentage[7d:1d])
+
+      # 11. 计算当前值与历史同期的偏差百分比
+      - record: host:memory:usage:deviation:from_history
+        expr: |
+          (host:memory:usage:percentage - host:memory:usage:history:baseline:7d)
+          / host:memory:usage:history:baseline:7d * 100
+
+      # 12. 计算预测置信度
+      - record: host:memory:usage:prediction:confidence
+        expr: |
+          1 - min(host:memory:usage:cv_1h / 0.5, 1)
+
+  - name: predictive-analysis-disk
+    interval: 1m
+    rules:
+
+      # ===== 磁盘使用率预测 =====
+
+      # 1. 计算磁盘使用率
+      - record: host:disk:usage:percentage
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|devtmpfs|overlay"} / node_filesystem_size_bytes) * 100
+
+      # 2. 计算每天磁盘增长量（字节/天）
+      - record: host:disk:usage:rate:1d
+        expr: |
+          rate(node_filesystem_size_bytes[1d]) * 0
+
+      # 3. 计算可用空间减少速率（字节/天）
+      - record: host:disk:available:decrease_rate
+        expr: |
+          -rate(node_filesystem_avail_bytes[1d]) * 86400
+
+      # 4. 计算磁盘满的预测天数
+      - record: host:disk:days_until_full
+        expr: |
+          node_filesystem_avail_bytes / (max_over_time(rate(node_filesystem_avail_bytes[1h])[7d:1h]) * 86400)
+
+      # 5. 计算 7 天趋势斜率
+      - record: host:disk:usage:trend:slope_7d
+        expr: |
+          linear_regression(host:disk:usage:percentage[7d]).slope
+
+      # 6. 预测 7 天后的磁盘使用率
+      - record: host:disk:usage:predicted_7d
+        expr: |
+          host:disk:usage:trend:slope_7d * 604800 + linear_regression(host:disk:usage:percentage[7d]).intercept
+
+      # ===== 历史同期对比预测 =====
+
+      # 7. 计算上周同一时间窗口的磁盘使用率
+      - record: host:disk:usage:history:same_time:last_week
+        expr: |
+          host:disk:usage:percentage offset 168h
+
+      # 8. 计算过去 4 周同一时间窗口的平均值（月度基线）
+      - record: host:disk:usage:history:baseline:4w
+        expr: |
+          avg_over_time(host:disk:usage:percentage[28d:7d])
+
+      # 9. 计算当前值与历史同期的偏差百分比
+      - record: host:disk:usage:deviation:from_history
+        expr: |
+          (host:disk:usage:percentage - host:disk:usage:history:baseline:4w)
+          / host:disk:usage:history:baseline:4w * 100
+
+      # 10. 检测磁盘增长异常（当前增长率超出历史平均 2 倍）
+      - record: host:disk:usage:growth:anomaly_score
+        expr: |
+          (host:disk:usage:trend:slope_7d - avg_over_time(host:disk:usage:trend:slope_7d[28d:7d]))
+          / stddev_over_time(host:disk:usage:trend:slope_7d[28d:7d])
+
+  - name: predictive-analysis-network
+    interval: 1m
+    rules:
+
+      # ===== 网络流量预测 =====
+
+      # 1. 计算入站流量（MB/s）
+      - record: host:network:in:mbps
+        expr: |
+          rate(node_network_receive_bytes_total{device!~"lo|docker.*|veth.*"}[5m]) * 8 / 1e6
+
+      # 2. 计算出站流量（MB/s）
+      - record: host:network:out:mbps
+        expr: |
+          rate(node_network_transmit_bytes_total{device!~"lo|docker.*|veth.*"}[5m]) * 8 / 1e6
+
+      # 3. 计算 1 小时流量趋势
+      - record: host:network:in:trend:slope_1h
+        expr: |
+          linear_regression(host:network:in:mbps[1h]).slope
+
+      # 4. 预测 1 小时后的入站流量
+      - record: host:network:in:predicted_1h
+        expr: |
+          host:network:in:trend:slope_1h * 3600 + linear_regression(host:network:in:mbps[1h]).intercept
+
+      # 5. 计算带宽使用率（假设 1Gbps 带宽）
+      - record: host:network:bandwidth:usage:percentage
+        expr: |
+          (host:network:in:mbps + host:network:out:mbps) / 1000 * 100
+
+      # ===== 历史同期对比预测 =====
+
+      # 6. 计算昨天同一时间窗口的网络流量
+      - record: host:network:in:history:same_time:yesterday
+        expr: |
+          host:network:in:mbps offset 24h
+
+      # 7. 计算上周同一时间窗口的网络流量
+      - record: host:network:in:history:same_time:last_week
+        expr: |
+          host:network:in:mbps offset 168h
+
+      # 8. 计算过去 7 天同一时间窗口的平均值
+      - record: host:network:in:history:baseline:7d
+        expr: |
+          avg_over_time(host:network:in:mbps[7d:1d])
+
+      # 9. 计算当前值与历史同期的偏差百分比
+      - record: host:network:in:deviation:from_history
+        expr: |
+          (host:network:in:mbps - host:network:in:history:baseline:7d)
+          / host:network:in:history:baseline:7d * 100
+
+      # 10. 检测网络流量异常（突发流量超出历史同期 3 倍标准差）
+      - record: host:network:in:spike:anomaly_score
+        expr: |
+          (host:network:in:mbps - avg_over_time(host:network:in:mbps[7d:1d]))
+          / stddev_over_time(host:network:in:mbps[7d:1d])
+
+  - name: predictive-analysis-switch
+    interval: 1m
+    rules:
+
+      # ===== 交换机 CPU 预测 =====
+
+      # 1. 计算交换机 CPU 使用率
+      - record: switch:cpu:usage:percentage
+        expr: |
+          (1 - avg by (instance) (rate(cpmCPUTotal5minRev[5m]) / 100)) * 100
+
+      # 2. 计算 1 小时趋势
+      - record: switch:cpu:usage:trend:slope_1h
+        expr: |
+          linear_regression(switch:cpu:usage:percentage[1h]).slope
+
+      # 3. 预测 1 小时后的 CPU 使用率
+      - record: switch:cpu:usage:predicted_1h
+        expr: |
+          switch:cpu:usage:trend:slope_1h * 3600 + linear_regression(switch:cpu:usage:percentage[1h]).intercept
+
+      # ===== 交换机流量预测 =====
+
+      # 4. 计算接口流量利用率
+      - record: switch:interface:utilization:percentage
+        expr: |
+          (rate(ifHCInOctets[5m]) * 8 / ifHighSpeed) * 100
+
+      # 5. 计算 1 小时趋势
+      - record: switch:interface:utilization:trend:slope_1h
+        expr: |
+          linear_regression(switch:interface:utilization:percentage[1h]).slope
+
+      # 6. 预测 1 小时后的接口利用率
+      - record: switch:interface:utilization:predicted_1h
+        expr: |
+          switch:interface:utilization:trend:slope_1h * 3600 + linear_regression(switch:interface:utilization:percentage[1h]).intercept
+
+  - name: predictive-analysis-vmware
+    interval: 1m
+    rules:
+
+      # ===== VMware ESXi 主机预测 =====
+
+      # 1. 计算 ESXi CPU 使用率
+      - record: esxi:host:cpu:usage:percentage
+        expr: |
+          vsphere_host_cpu_usage_average
+
+      # 2. 计算 1 小时趋势
+      - record: esxi:host:cpu:usage:trend:slope_1h
+        expr: |
+          linear_regression(esxi:host:cpu:usage:percentage[1h]).slope
+
+      # 3. 预测 1 小时后的 CPU 使用率
+      - record: esxi:host:cpu:usage:predicted_1h
+        expr: |
+          esxi:host:cpu:usage:trend:slope_1h * 3600 + linear_regression(esxi:host:cpu:usage:percentage[1h]).intercept
+
+      # ===== VMware 存储预测 =====
+
+      # 4. 计算存储空间使用率
+      - record: esxi:datastore:usage:percentage
+        expr: |
+          (1 - vsphere_datastore_capacity_free / vsphere_datastore_capacity_total) * 100
+
+      # 5. 计算 7 天趋势
+      - record: esxi:datastore:usage:trend:slope_7d
+        expr: |
+          linear_regression(esxi:datastore:usage:percentage[7d]).slope
+
+      # 6. 预测 7 天后的存储使用率
+      - record: esxi:datastore:usage:predicted_7d
+        expr: |
+          esxi:datastore:usage:trend:slope_7d * 604800 + linear_regression(esxi:datastore:usage:percentage[7d]).intercept
+
+  - name: predictive-analysis-forecast
+    interval: 5m
+    rules:
+
+      # ===== 综合预测指标 =====
+
+      # 1. CPU 预测告警阈值触发时间（秒）
+      # 计算: (90 - 当前值) / 斜率
+      - record: host:cpu:time_until_critical
+        expr: |
+          (90 - host:cpu:usage:percentage) / host:cpu:usage:trend:slope_1h
+        labels:
+          threshold: "90%"
+
+      # 2. 内存预测告警阈值触发时间
+      - record: host:memory:time_until_critical
+        expr: |
+          (95 - host:memory:usage:percentage) / host:memory:usage:trend:slope_1h
+        labels:
+          threshold: "95%"
+
+      # 3. 磁盘预测告警阈值触发时间（天）
+      - record: host:disk:time_until_full
+        expr: |
+          (90 - host:disk:usage:percentage) / (host:disk:usage:trend:slope_7d * 86400)
+        labels:
+          threshold: "90%"
+
+# ===================================================================
+# 算法说明:
+#
+# 1. 线性回归 (linear_regression):
+#    - 公式: y = slope * x + intercept
+#    - slope: 趋势斜率（正数=上升，负数=下降）
+#    - intercept: 截距
+#    - 预测值: predicted_value = slope * time + intercept
+#
+# 2. 移动平均 (avg_over_time):
+#    - 平滑数据，减少波动影响
+#    - 常用窗口: 5m, 15m, 1h
+#
+# 3. 标准差 (stddev_over_time):
+#    - 衡量数据波动性
+#    - 标准差大 = 波动大，预测可靠性低
+#
+# 4. 异常评分:
+#    - 公式: (当前值 - 均值) / 标准差
+#    - > 2 = 异常（超出 2 倍标准差）
+#
+# 5. 预测时间计算:
+#    - 公式: (阈值 - 当前值) / 斜率
+#    - 返回达到阈值所需的秒数或天数
+#
+# 6. 历史同期对比:
+#    - offset 24h: 对比昨天同一时间
+#    - offset 168h: 对比上周同一时间
+#    - avg_over_time[7d:1d]: 7 天同一时间窗口的平均值
+#
+# ===================================================================
+
+  - name: predictive-analysis-topology-impact
+    interval: 1m
+    rules:
+
+      # ===== 拓扑影响范围预计算 =====
+
+      # 1. 核心交换机故障影响范围 - 统计连接到该核心交换机的设备数量
+      - record: topology:core_switch:affected_devices_count
+        expr: |
+          count by (connected_switch) (
+            label_replace(topology_device_info, "connected_switch", "$1", "device_host", "(.*)")
+          )
+
+      # 2. 核心交换机故障影响的虚拟机总数
+      - record: topology:core_switch:affected_vms_count
+        expr: |
+          sum without() (
+            count by (connected_switch) (
+              label_replace(vsphere_vm_power_state{power_state="poweredOn"}, "connected_switch", "$1", "esxhostname", "(.*)")
+            )
+          )
+
+      # 3. 接入交换机故障影响范围 - 统计连接到该接入交换机的服务器数量
+      - record: topology:access_switch:affected_servers_count
+        expr: |
+          count by (connected_switch) (
+            node:cpu_usage:with_topology
+          )
+
+      # 4. 接入交换机故障影响的虚拟机数
+      - record: topology:access_switch:affected_vms_count
+        expr: |
+          sum by (connected_switch) (
+            count by (esxi_host) (
+              label_replace(vsphere_vm_power_state{power_state="poweredOn"}, "connected_switch", "$1", "esxhostname", "(.*)")
+            )
+          )
+
+      # 5. ESXi 主机故障影响的虚拟机列表（用逗号分隔）
+      - record: topology:esxi_host:affected_vms_list
+        expr: |
+          label_join(
+            label_join(
+              vsphere_vm_power_state{power_state="poweredOn"},
+              "vm_list", ",", "vmname"
+            ),
+            "vm_list", " | ", "esxhostname"
+          )
+
+      # 6. ESXi 主机故障影响的虚拟机数量
+      - record: topology:esxi_host:affected_vms_count
+        expr: |
+          count by (esxhostname) (
+            vsphere_vm_power_state{power_state="poweredOn"}
+          )
+
+      # 7. 物理服务器故障影响的虚拟机数量（通过 ESXi 主机关联）
+      - record: topology:physical_server:affected_vms_count
+        expr: |
+          sum by (instance) (
+            count by (esxhostname) (
+              label_replace(
+                vsphere_vm_power_state{power_state="poweredOn"},
+                "instance", "$1", "esxhostname", "(.*)"
+              )
+            )
+          )
+
+      # 8. 物理服务器故障影响的业务服务数量（假设通过 topology_device_info 的 services 标签）
+      - record: topology:physical_server:affected_services_count
+        expr: |
+          count by (instance) (
+            label_replace(topology_device_info, "services", "$1", "services", "(.*)")
+          )
+
+      # 9. 存储路径故障影响的虚拟机数量
+      - record: topology:storage_path:affected_vms_count
+        expr: |
+          count by (datastore) (
+            vsphere_vm_disk_usage_average
+          )
+
+      # 10. 数据存储故障影响的虚拟机列表
+      - record: topology:datastore:affected_vms_list
+        expr: |
+          label_join(
+            label_join(
+              vsphere_vm_disk_usage_average,
+              "vm_list", ",", "vmname"
+            ),
+            "vm_list", " | ", "datastore"
+          )
+
+      # 11. 网络分区检测 - 同一网络段 50% 以上设备离线
+      - record: topology:network_segment:outage_percentage
+        expr: |
+          count by (network_segment) (
+            up{job="snmp-exporter"} == 0
+          ) / count by (network_segment) (
+            up{job="snmp-exporter"}
+          ) * 100
+
+      # 12. 机架级故障影响范围 - 统计同一机架的设备数量
+      - record: topology:rack:affected_devices_count
+        expr: |
+          count by (rack) (
+            topology_device_info
+          )
+
+      # 13. 机架故障影响的虚拟机总数
+      - record: topology:rack:affected_vms_count
+        expr: |
+          sum by (rack) (
+            count by (esxhostname) (
+              label_replace(
+                vsphere_vm_power_state{power_state="poweredOn"},
+                "rack", "$1", "esxhostname", "(.*)"
+              )
+            )
+          )
+
+      # 14. 数据中心级故障影响范围 - 统计同一数据中心的设备数量
+      - record: topology:datacenter:affected_devices_count
+        expr: |
+          count by (datacenter) (
+            topology_device_info
+          )
+
+      # 15. 数据中心故障影响的虚拟机总数
+      - record: topology:datacenter:affected_vms_count
+        expr: |
+          sum by (datacenter) (
+            count by (esxhostname) (
+              label_replace(
+                vsphere_vm_power_state{power_state="poweredOn"},
+                "datacenter", "$1", "esxhostname", "(.*)"
+              )
+            )
+          )
+
+  - name: predictive-analysis-seasonal
+    interval: 5m
+    rules:
+
+      # ===== 季节性分解预测（STL 风格） =====
+
+      # 1. 趋势分量（长期变化）- 使用 24 小时移动平均
+      - record: host:cpu:usage:seasonal:trend
+        expr: |
+          avg_over_time(host:cpu:usage:percentage[24h])
+
+      # 2. 季节性分量（周期性模式）- 计算与趋势的偏差
+      - record: host:cpu:usage:seasonal:seasonal
+        expr: |
+          host:cpu:usage:percentage - host:cpu:usage:seasonal:trend
+
+      # 3. 残差分量（随机波动）- 计算与季节性的偏差
+      - record: host:cpu:usage:seasonal:residual
+        expr: |
+          host:cpu:usage:seasonal:seasonal - avg_over_time(host:cpu:usage:seasonal:seasonal[1h])
+
+      # 4. 基于季节性的预测
+      # 预测 = 趋势(预测) + 季节性(历史同期) + 残差(平滑)
+      - record: host:cpu:usage:predicted:seasonal
+        expr: |
+          # 趋势预测（使用 6 小时趋势）
+          linear_regression(host:cpu:usage:seasonal:trend[6h]).slope * 3600
+          + linear_regression(host:cpu:usage:seasonal:trend[6h]).intercept
+          # 加上历史同期的季节性分量（昨天同一时间）
+          + (host:cpu:usage:seasonal:seasonal offset 24h)
+          # 加上残差的平滑值
+          + avg_over_time(host:cpu:usage:seasonal:residual[1h])
+
+      # 5. 每日周期性基线（过去 7 天同一时间的平均值）
+      - record: host:cpu:usage:seasonal:daily:baseline
+        expr: |
+          avg_over_time(host:cpu:usage:percentage[7d:1d])
+
+      # 6. 每周周期性基线（过去 4 周同一时间的平均值）
+      - record: host:cpu:usage:seasonal:weekly:baseline
+        expr: |
+          avg_over_time(host:cpu:usage:percentage[28d:7d])
+
+      # 7. 工作日 vs 周末模式检测
+      - record: host:cpu:usage:seasonal:weekday:pattern
+        expr: |
+          avg_over_time(host:cpu:usage:percentage[7d:1d])
+          unless hour() >= 0 and hour() < 6
+
+      # 8. 周末模式检测
+      - record: host:cpu:usage:seasonal:weekend:pattern
+        expr: |
+          avg_over_time(host:cpu:usage:percentage[28d:7d])
+          unless (day_of_week() >= 1 and day_of_week() <= 5)
+
+      # 9. 业务高峰时段检测（基于历史数据）
+      - record: host:cpu:usage:seasonal:peak:hours
+        expr: |
+          avg_over_time(host:cpu:usage:percentage[7d:1d]) > avg_over_time(host:cpu:usage:percentage[24h]) * 1.2
+
+      # 10. 季节性调整后的预测
+      # 如果当前是高峰时段，使用高峰基线；否则使用正常基线
+      - record: host:cpu:usage:predicted:adjusted
+        expr: |
+          (
+            host:cpu:usage:predicted:seasonal
+            * (host:cpu:usage:seasonal:peak:hours / avg_over_time(host:cpu:usage:percentage[24h]))
+          )
+          unless host:cpu:usage:seasonal:peak:hours == 0
+
+      # ===== 季节性异常检测 =====
+
+      # 11. 检测异常的季节性偏差
+      - record: host:cpu:usage:seasonal:anomaly
+        expr: |
+          abs(host:cpu:usage:percentage - host:cpu:usage:seasonal:daily:baseline)
+          / stddev_over_time(host:cpu:usage:percentage[7d:1d])
+
+      # 12. 检测周期性模式变化
+      - record: host:cpu:usage:seasonal:pattern:change
+        expr: |
+          abs(host:cpu:usage:seasonal:daily:baseline - host:cpu:usage:seasonal:weekly:baseline)
+          / host:cpu:usage:seasonal:weekly:baseline * 100
+
+  - name: predictive-analysis-multivariate
+    interval: 1m
+    rules:
+
+      # ===== 多指标关联预测 =====
+
+      # 1. CPU 预测考虑进程数量趋势
+      - record: host:cpu:usage:predicted:with_processes
+        expr: |
+          host:cpu:usage:predicted:dynamic
+          * (1 + (rate(node_procs_running[1h]) - avg_over_time(rate(node_procs_running[1h])[24h:1h])) / avg_over_time(rate(node_procs_running[1h])[24h:1h]))
+
+      # 2. CPU 预测考虑网络流量趋势
+      - record: host:cpu:usage:predicted:with_network
+        expr: |
+          host:cpu:usage:predicted:dynamic
+          * (1 + (host:network:in:mbps - avg_over_time(host:network:in:mbps[1h])) / avg_over_time(host:network:in:mbps[1h]) * 0.3)
+
+      # 3. 内存预测考虑缓存使用率
+      - record: host:memory:usage:predicted:with_cache
+        expr: |
+          host:memory:usage:predicted_1h
+          + (node_memory_Cached_bytes / node_memory_MemTotal_bytes * 100 * 0.2)
+
+      # 4. 内存预测考虑应用启动数量
+      - record: host:memory:usage:predicted:with_apps
+        expr: |
+          host:memory:usage:predicted_1h
+          * (1 + (rate(node_procs_running[1h]) - avg_over_time(rate(node_procs_running[1h])[24h:1h])) / avg_over_time(rate(node_procs_running[1h])[24h:1h]) * 0.5)
+
+      # 5. 磁盘预测考虑 IO 使用率
+      - record: host:disk:usage:predicted:with_io
+        expr: |
+          host:disk:usage:predicted_7d
+          + rate(node_disk_io_time_seconds_total[1h]) * 100 * 0.1
+
+      # 6. 综合多指标 CPU 预测
+      - record: host:cpu:usage:predicted:multivariate
+        expr: |
+          0.4 * host:cpu:usage:predicted:dynamic
+          + 0.3 * host:cpu:usage:predicted:with_processes
+          + 0.3 * host:cpu:usage:predicted:with_network
+
+      # 7. 综合多指标内存预测
+      - record: host:memory:usage:predicted:multivariate
+        expr: |
+          0.5 * host:memory:usage:predicted_1h
+          + 0.3 * host:memory:usage:predicted:with_cache
+          + 0.2 * host:memory:usage:predicted:with_apps
+
+      # 8. CPU-内存关联分析（检测内存泄漏）
+      - record: host:cpu:memory:correlation
+        expr: |
+          corr(host:cpu:usage:percentage, host:memory:usage:percentage)
+
+      # 9. 网络-IO 关联分析（检测 IO 瓶颈）
+      - record: host:network:disk:correlation
+        expr: |
+          corr(host:network:in:mbps, rate(node_disk_io_time_seconds_total[5m]))
+
+      # 10. 业务指标关联（假设有业务请求量指标）
+      - record: host:cpu:usage:predicted:with_business
+        expr: |
+          host:cpu:usage:predicted:multivariate
+          * (1 + (rate(http_requests_total[1h]) - avg_over_time(rate(http_requests_total[1h])[24h:1h])) / avg_over_time(rate(http_requests_total[1h])[24h:1h]) * 0.4)
+
+  - name: predictive-analysis-adaptive
+    interval: 5m
+    rules:
+
+      # ===== 自适应预测模型选择 =====
+
+      # 1. 计算线性回归预测的历史准确度
+      # 准确度 = 1 - (预测误差 / 实际值)
+      - record: host:cpu:usage:accuracy:linear
+        expr: |
+          1 - abs(host:cpu:usage:predicted_1h offset 1h - host:cpu:usage:percentage)
+          / (host:cpu:usage:percentage + 1)
+
+      # 2. 计算移动平均预测的历史准确度
+      - record: host:cpu:usage:accuracy:moving_avg
+        expr: |
+          1 - abs(avg_over_time(host:cpu:usage:percentage[1h] offset 1h) - host:cpu:usage:percentage)
+          / (host:cpu:usage:percentage + 1)
+
+      # 3. 计算季节性预测的历史准确度
+      - record: host:cpu:usage:accuracy:seasonal
+        expr: |
+          1 - abs(host:cpu:usage:predicted:seasonal offset 1h - host:cpu:usage:percentage)
+          / (host:cpu:usage:percentage + 1)
+
+      # 4. 计算多指标预测的历史准确度
+      - record: host:cpu:usage:accuracy:multivariate
+        expr: |
+          1 - abs(host:cpu:usage:predicted:multivariate offset 1h - host:cpu:usage:percentage)
+          / (host:cpu:usage:percentage + 1)
+
+      # 5. 计算融合预测的历史准确度
+      - record: host:cpu:usage:accuracy:ensemble
+        expr: |
+          1 - abs(host:cpu:usage:predicted:ensemble offset 1h - host:cpu:usage:percentage)
+          / (host:cpu:usage:percentage + 1)
+
+      # 6. 选择最准确的预测模型
+      - record: host:cpu:usage:predicted:best
+        expr: |
+          max(
+            label_replace(
+              label_replace(
+                label_replace(
+                  label_replace(
+                    label_replace(
+                      host:cpu:usage:predicted_1h,
+                      "model", "linear", "", ""
+                    ),
+                    "model", "moving_avg", "", ""
+                  ),
+                  "model", "seasonal", "", ""
+                ),
+                "model", "multivariate", "", ""
+              ),
+              "model", "ensemble", "", ""
+            )
+          ) by (instance)
+
+      # 7. 动态权重调整（基于历史准确度）
+      - record: host:cpu:usage:predicted:adaptive
+        expr: |
+          (host:cpu:usage:accuracy:linear / (host:cpu:usage:accuracy:linear + host:cpu:usage:accuracy:seasonal + host:cpu:usage:accuracy:multivariate)) * host:cpu:usage:predicted_1h
+          + (host:cpu:usage:accuracy:seasonal / (host:cpu:usage:accuracy:linear + host:cpu:usage:accuracy:seasonal + host:cpu:usage:accuracy:multivariate)) * host:cpu:usage:predicted:seasonal
+          + (host:cpu:usage:accuracy:multivariate / (host:cpu:usage:accuracy:linear + host:cpu:usage:accuracy:seasonal + host:cpu:usage:accuracy:multivariate)) * host:cpu:usage:predicted:multivariate
+
+      # 8. 预测稳定性评分（预测值的变化幅度）
+      - record: host:cpu:usage:prediction:stability
+        expr: |
+          1 - stddev_over_time(host:cpu:usage:predicted:adaptive[1h]) / avg_over_time(host:cpu:usage:predicted:adaptive[1h])
+
+      # 9. 综合预测质量评分
+      # 质量 = 准确度 * 稳定性 * 置信度
+      - record: host:cpu:usage:prediction:quality
+        expr: |
+          host:cpu:usage:accuracy:adaptive * host:cpu:usage:prediction:stability * host:cpu:usage:prediction:confidence
+
+      # 10. 自适应预测（根据质量评分选择）
+      - record: host:cpu:usage:predicted:final
+        expr: |
+          (
+            # 高质量（> 0.7）：使用自适应预测
+            host:cpu:usage:predicted:adaptive
+          )
+          unless host:cpu:usage:prediction:quality < 0.7
+          (
+            # 中等质量（0.5-0.7）：使用融合预测
+            host:cpu:usage:predicted:ensemble
+          )
+          unless host:cpu:usage:prediction:quality < 0.5
+          (
+            # 低质量（< 0.5）：使用历史基线
+            host:cpu:usage:history:baseline:7d
+          )
+
+      # 11. 自适应准确度（综合所有模型的准确度）
+      - record: host:cpu:usage:accuracy:adaptive
+        expr: |
+          (host:cpu:usage:accuracy:linear + host:cpu:usage:accuracy:seasonal + host:cpu:usage:accuracy:multivariate) / 3

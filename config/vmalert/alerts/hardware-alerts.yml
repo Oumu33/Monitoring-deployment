@@ -630,11 +630,29 @@ groups:
             - 虚拟机可能无法访问
             - 业务中断
 
+            **拓扑链路**:
+            物理服务器 {{ $labels.instance }}
+              ↓ (硬件故障)
+            ESXi 主机 {{ $labels.esxhostname }}
+              ↓ (虚拟化层)
+            虚拟机列表:
+            {{ $labels.vm_list }}
+
+            **连接关系**:
+            - 交换机: {{ $labels.connected_switch }}
+            - 端口: {{ $labels.connected_port }}
+            - 网络段: {{ $labels.network_segment }}
+
             **处理步骤**:
             1. 立即检查物理服务器硬件状态
             2. 查看受影响的虚拟机列表
             3. 考虑迁移虚拟机到其他主机
             4. 修复物理服务器硬件问题
+          vm_list: "{{ $labels.vm_list }}"
+          connected_switch: "{{ $labels.connected_switch }}"
+          connected_port: "{{ $labels.connected_port }}"
+          network_segment: "{{ $labels.network_segment }}"
+          topology_chain: "物理服务器 → ESXi 主机 → 虚拟机"
           runbook_url: "https://your-wiki.com/runbooks/physical-server-vm-impact"
 
       # CPU 温度过高影响虚拟机性能

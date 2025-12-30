@@ -1,0 +1,172 @@
+{{ define "feishu.card.title" }}
+{{ if eq .Status "firing" }}🔥 告警触发{{ else }}✅ 告警恢复{{ end }}
+{{ end }}
+
+{{ define "feishu.card.content" }}
+{
+  "msg_type": "interactive",
+  "card": {
+    "header": {
+      "template": "{{ if eq .Status \"firing\" }}red{{ else if eq .Labels.severity \"warning\" }}orange{{ else if eq .Labels.severity \"critical\" }}red{{ else }}green{{ end }}",
+      "title": {
+        "content": "{{ if eq .Status \"firing\" }}🔥 告警触发{{ else }}✅ 告警恢复{{ end }}",
+        "tag": "plain_text"
+      }
+    },
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "content": "**告警级别:** {{ .Labels.severity }}\n**告警数量:** {{ len .Alerts }}\n**触发时间:** {{ (index .Alerts 0).StartsAt.Format \"2006-01-02 15:04:05\" }}",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {{ range $i, $alert := .Alerts }}
+      {
+        "tag": "div",
+        "text": {
+          "content": "### 📌 {{ $alert.Labels.alertname }}\n\n**实例:** {{ $alert.Labels.instance }}\n**摘要:** {{ $alert.Annotations.summary }}\n\n**描述:**\n{{ $alert.Annotations.description }}\n\n{{ if $alert.Annotations.prediction_value }}**预测信息:**\n- 预测值: {{ $alert.Annotations.prediction_value }}\n- 当前值: {{ $alert.Annotations.current_value }}\n- 预测质量: {{ $alert.Annotations.prediction_quality }}\n- 预测置信度: {{ $alert.Annotations.prediction_confidence }}\n- 预测方法: {{ $alert.Annotations.prediction_method }}\n\n{{ end }}**标签:**\n{{ range $key, $value := $alert.Labels }}- {{ $key }}: {{ $value }}\n{{ end }}",
+          "tag": "lark_md"
+        }
+      },
+      {{ if lt $i (sub (len $.Alerts) 1) }}{
+        "tag": "hr"
+      },{{ end }}
+      {{ end }}
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "🔍 查看详情",
+              "tag": "plain_text"
+            },
+            "type": "primary",
+            "url": "http://localhost:3000/d/alerts"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "📊 Grafana",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://localhost:3000"
+          }
+        ]
+      }
+    ]
+  }
+}
+{{ end }}
+
+{{ define "feishu.text.content" }}
+{{ if eq .Status "firing" }}🔥 告警触发{{ else }}✅ 告警恢复{{ end }}
+
+**告警级别:** {{ .Labels.severity }}
+**告警数量:** {{ len .Alerts }}
+**触发时间:** {{ (index .Alerts 0).StartsAt.Format "2006-01-02 15:04:05" }}
+
+{{ range .Alerts }}
+---
+### 📌 {{ .Labels.alertname }}
+
+**实例:** {{ .Labels.instance }}
+**摘要:** {{ .Annotations.summary }}
+
+**描述:**
+{{ .Annotations.description }}
+
+{{ if .Annotations.prediction_value }}
+**预测信息:**
+- 预测值: {{ .Annotations.prediction_value }}
+- 当前值: {{ .Annotations.current_value }}
+- 预测质量: {{ .Annotations.prediction_quality }}
+- 预测置信度: {{ .Annotations.prediction_confidence }}
+- 预测方法: {{ .Annotations.prediction_method }}
+
+{{ end }}**标签:**
+{{ range $key, $value := .Labels }}- {{ $key }}: {{ $value }}
+{{ end }}
+
+{{ end }}
+
+---
+🔗 [查看详情](http://localhost:3000/d/alerts) | 📊 [Grafana](http://localhost:3000)
+{{ end }}
+
+{{ define "feishu.predictive.alert" }}
+{
+  "msg_type": "interactive",
+  "card": {
+    "header": {
+      "template": "{{ if eq .Labels.severity \"critical\" }}red{{ else if eq .Labels.severity \"warning\" }}orange{{ else }}green{{ end }}",
+      "title": {
+        "content": "🔮 预测性告警 - {{ .Labels.alertname }}",
+        "tag": "plain_text"
+      }
+    },
+    "elements": [
+      {
+        "tag": "div",
+        "text": {
+          "content": "**实例:** {{ .Labels.instance }}\n**告警级别:** {{ .Labels.severity }}\n**预测时间窗口:** {{ .Annotations.prediction_horizon }}",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "div",
+        "text": {
+          "content": "### 📊 预测详情\n\n**当前值:** {{ .Annotations.current_value }}\n**预测值:** {{ .Annotations.prediction_value }}\n**预测质量:** {{ .Annotations.prediction_quality }}\n**预测稳定性:** {{ .Annotations.prediction_stability }}\n**预测置信度:** {{ .Annotations.prediction_confidence }}\n**预测方法:** {{ .Annotations.prediction_method }}\n\n### 📈 多模型对比\n\n| 模型 | 预测值 | 准确度 |\n|------|--------|--------|\n| 线性回归 | {{ .Annotations.linear_prediction }} | {{ .Annotations.linear_accuracy }} |\n| 季节性 | {{ .Annotations.seasonal_prediction }} | {{ .Annotations.seasonal_accuracy }} |\n| 多指标 | {{ .Annotations.multivariate_prediction }} | {{ .Annotations.multivariate_accuracy }} |\n| 融合预测 | {{ .Annotations.ensemble_prediction }} | {{ .Annotations.ensemble_accuracy }} |\n| **自适应** | **{{ .Annotations.prediction_value }}** | **{{ .Annotations.adaptive_accuracy }}** |\n\n### 📅 历史对比\n\n- 昨天同期: {{ .Annotations.history_yesterday }}\n- 上周同期: {{ .Annotations.history_last_week }}\n- 7 天基线: {{ .Annotations.history_baseline_7d }}\n- 历史偏差: {{ .Annotations.deviation_from_history }}\n\n### 🔄 季节性分析\n\n- 趋势分量: {{ .Annotations.seasonal_trend }}\n- 季节性分量: {{ .Annotations.seasonal_seasonal }}\n- 残差分量: {{ .Annotations.seasonal_residual }}\n- 每日基线: {{ .Annotations.seasonal_daily_baseline }}\n\n### 🎯 建议操作\n\n{{ .Annotations.auto_mitigation_suggestions }}\n\n### 🛡️ 预防措施\n\n{{ .Annotations.preventive_measures }}",
+          "tag": "lark_md"
+        }
+      },
+      {
+        "tag": "hr"
+      },
+      {
+        "tag": "action",
+        "actions": [
+          {
+            "tag": "button",
+            "text": {
+              "content": "🔍 查看详情",
+              "tag": "plain_text"
+            },
+            "type": "primary",
+            "url": "http://localhost:3000/d/alerts"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "📊 Grafana",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "http://localhost:3000"
+          },
+          {
+            "tag": "button",
+            "text": {
+              "content": "📖 运维手册",
+              "tag": "plain_text"
+            },
+            "type": "default",
+            "url": "{{ .Annotations.runbook_url }}"
+          }
+        ]
+      }
+    ]
+  }
+}
+{{ end }}

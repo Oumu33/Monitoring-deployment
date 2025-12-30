@@ -1,0 +1,141 @@
+# ===================================================================
+# Docker Compose - 增强版告警通知服务
+# 包含飞书、钉钉、企业微信的 Webhook 适配器
+# ===================================================================
+
+version: '3.8'
+
+services:
+  # ===== Alertmanager =====
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./config/alertmanager/alertmanager-enhanced.yml:/etc/alertmanager/alertmanager.yml
+      - ./config/alertmanager/templates:/etc/alertmanager/templates
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # ===== 飞书 Webhook 适配器 =====
+  feishu-webhook-adapter:
+    image: ghcr.io/feishu/feishu-openapi:latest
+    container_name: feishu-webhook-adapter
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./config/alertmanager/webhook-adapter-config.yml:/etc/feishu/config.yml
+      - ./config/alertmanager/templates:/etc/alertmanager/templates
+    environment:
+      - LOG_LEVEL=info
+    command:
+      - '--config=/etc/feishu/config.yml'
+      - '--listen=:8080'
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - alertmanager
+
+  # ===== 钉钉 Webhook 适配器 =====
+  dingtalk-webhook-adapter:
+    image: timonwong/prometheus-webhook-dingtalk:latest
+    container_name: dingtalk-webhook-adapter
+    ports:
+      - "8060:8060"
+    volumes:
+      - ./config/alertmanager/webhook-adapter-config.yml:/etc/prometheus-webhook-dingtalk/config.yml
+      - ./config/alertmanager/templates:/etc/prometheus-webhook-dingtalk/templates
+    environment:
+      - LOG_LEVEL=info
+    command:
+      - '--config.file=/etc/prometheus-webhook-dingtalk/config.yml'
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - alertmanager
+
+  # ===== 企业微信 Webhook 适配器 =====
+  wework-webhook-adapter:
+    image: zhangsean/wechat_work_webhook:latest
+    container_name: wework-webhook-adapter
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./config/alertmanager/webhook-adapter-config.yml:/etc/wework/config.yml
+      - ./config/alertmanager/templates:/etc/wework/templates
+    environment:
+      - LOG_LEVEL=info
+    command:
+      - '--config=/etc/wework/config.yml'
+      - '--listen=:8080'
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - alertmanager
+
+  # ===== 统一 Webhook 适配器（多平台转发） =====
+  alertmanager-webhook-adapter:
+    image: prom/alertmanager:latest
+    container_name: alertmanager-webhook-adapter
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config/alertmanager/webhook-router.yml:/etc/webhook/router.yml
+    environment:
+      - LOG_LEVEL=info
+    command:
+      - '--config.file=/etc/webhook/router.yml'
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - alertmanager
+      - feishu-webhook-adapter
+      - dingtalk-webhook-adapter
+      - wework-webhook-adapter
+
+networks:
+  monitoring:
+    driver: bridge
+
+# ===================================================================
+# 使用说明:
+#
+# 1. 配置 Webhook URL:
+#    - 编辑 config/alertmanager/webhook-adapter-config.yml
+#    - 替换 YOUR_WEBHOOK_URL、YOUR_SECRET、YOUR_KEY 等占位符
+#
+# 2. 启动服务:
+#    docker-compose -f docker-compose-enhanced-notifications.yml up -d
+#
+# 3. 查看日志:
+#    docker-compose -f docker-compose-enhanced-notifications.yml logs -f
+#
+# 4. 测试告警:
+#    curl -X POST http://localhost:9093/api/v1/alerts \
+#      -H 'Content-Type: application/json' \
+#      -d '[{
+#        "labels": {
+#          "alertname": "TestAlert",
+#          "severity": "warning",
+#          "category": "predictive"
+#        },
+#        "annotations": {
+#          "summary": "测试告警",
+#          "description": "这是一条测试告警"
+#        }
+#      }]'
+#
+# 5. 访问 Alertmanager:
+#    http://localhost:9093
+#
+# ===================================================================

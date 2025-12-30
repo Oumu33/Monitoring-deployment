@@ -1,0 +1,197 @@
+# ===================================================================
+# Alertmanager 增强版配置
+# 支持飞书、钉钉、企业微信的精美告警通知
+# ===================================================================
+
+global:
+  resolve_timeout: 5m
+  # 默认标签
+  labels:
+    env: production
+    region: default
+
+# 告警路由配置
+route:
+  group_by: ['alertname', 'cluster', 'service', 'severity', 'category']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default'
+
+  routes:
+    # ===== 预测性告警路由 =====
+    - match:
+        category: predictive
+      receiver: 'predictive-alerts'
+      group_wait: 30s
+      repeat_interval: 1h
+      routes:
+        # 紧急预测（30分钟内）
+        - match:
+            subcategory: forecast
+            priority: P0
+          receiver: 'predictive-critical'
+          group_wait: 10s
+          repeat_interval: 15m
+        # 常规预测（1小时内）
+        - match:
+            subcategory: forecast
+            priority: P1
+          receiver: 'predictive-warning'
+          group_wait: 30s
+          repeat_interval: 30m
+
+    # ===== 根因告警路由 =====
+    - match:
+        root_cause: "true"
+      receiver: 'root-cause-alerts'
+      group_wait: 10s
+      repeat_interval: 5m
+
+    # ===== Metrics + Logs 联动告警路由 =====
+    - match:
+        subcategory: logs
+      receiver: 'metrics-logs-alerts'
+      group_wait: 30s
+      repeat_interval: 30m
+
+    # ===== 硬件告警路由 =====
+    - match:
+        category: hardware
+      receiver: 'hardware-alerts'
+      group_wait: 10s
+      repeat_interval: 1h
+      routes:
+        # 硬件故障
+        - match:
+            severity: critical
+          receiver: 'hardware-critical'
+          group_wait: 10s
+          repeat_interval: 5m
+        # 预测性硬件故障
+        - match:
+            priority: P1
+          receiver: 'hardware-predictive'
+          group_wait: 30s
+          repeat_interval: 1h
+
+    # ===== 严重告警路由 =====
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 10s
+      repeat_interval: 5m
+
+    # ===== 警告告警路由 =====
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      repeat_interval: 30m
+
+# 告警接收器配置
+receivers:
+  # ===== 默认接收器 =====
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/default'
+        send_resolved: true
+
+  # ===== 预测性告警接收器 =====
+  - name: 'predictive-alerts'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/predictive'
+        send_resolved: true
+
+  - name: 'predictive-critical'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/predictive-critical'
+        send_resolved: true
+
+  - name: 'predictive-warning'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/predictive-warning'
+        send_resolved: true
+
+  # ===== 根因告警接收器 =====
+  - name: 'root-cause-alerts'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/root-cause'
+        send_resolved: true
+
+  # ===== Metrics + Logs 联动告警接收器 =====
+  - name: 'metrics-logs-alerts'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/metrics-logs'
+        send_resolved: true
+
+  # ===== 硬件告警接收器 =====
+  - name: 'hardware-alerts'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/hardware'
+        send_resolved: true
+
+  - name: 'hardware-critical'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/hardware-critical'
+        send_resolved: true
+
+  - name: 'hardware-predictive'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/hardware-predictive'
+        send_resolved: true
+
+  # ===== 严重告警接收器 =====
+  - name: 'critical-alerts'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/critical'
+        send_resolved: true
+
+  # ===== 警告告警接收器 =====
+  - name: 'warning-alerts'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook-adapter:8080/warning'
+        send_resolved: true
+
+# 告警抑制规则
+inhibit_rules:
+  # 根因告警抑制下游告警
+  - source_match:
+      root_cause: "true"
+    target_match_re:
+      severity: 'warning|info'
+    equal: ['cluster', 'service']
+
+  # 严重告警抑制警告告警
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance', 'cluster']
+
+  # 预测性告警抑制重复告警
+  - source_match:
+      category: predictive
+      subcategory: forecast
+    target_match_re:
+      alertname: '.*High.*'
+    equal: ['instance']
+
+# ===================================================================
+# 使用说明:
+#
+# 1. 部署 Webhook 适配器:
+#    - 飞书适配器: https://github.com/feishu/feishu-openapi
+#    - 钉钉适配器: https://github.com/timonwong/prometheus-webhook-dingtalk
+#    - 企业微信适配器: https://github.com/zhangsean/wechat_work_webhook
+#
+# 2. 配置适配器的 config.yml:
+#    - 指定模板文件路径
+#    - 配置 Webhook URL
+#    - 配置签名密钥
+#
+# 3. 在 docker-compose.yaml 中添加适配器服务
+#
+# 4. 测试告警通知
+#
+# ===================================================================
