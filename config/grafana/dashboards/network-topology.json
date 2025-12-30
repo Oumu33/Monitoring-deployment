@@ -40,7 +40,16 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "title": "Server Overview",
+      "url": "/d/server-overview?${__url_time_range}"
+    },
+    {
+      "title": "Logs Explorer",
+      "url": "/d/logs-explorer?${__url_time_range}"
+    }
+  ],
   "liveNow": false,
   "panels": [
     {
