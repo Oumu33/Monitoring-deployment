@@ -1,0 +1,1336 @@
+# ===================================================================
+# 服务器硬件监控告警规则
+# 用途: 监控物理服务器硬件健康状态（Redfish + IPMI）
+# ===================================================================
+
+groups:
+  - name: hardware-alerts
+    interval: 30s
+    rules:
+
+      # ===== 系统健康告警 =====
+
+      # 系统整体健康状态异常
+      - alert: HardwareSystemHealthCritical
+        expr: redfish_system_health_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: system
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 系统健康状态异常"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **健康状态**: {{ $value }}
+
+            **影响**: 系统可能存在严重硬件故障
+
+            **处理步骤**:
+            1. 登录 BMC/iDRAC/iLO 查看详细错误信息
+            2. 检查系统事件日志 (SEL)
+            3. 立即更换故障硬件组件
+            4. 如无法立即修复，考虑迁移业务
+          runbook_url: "https://your-wiki.com/runbooks/hardware-system-health"
+
+      # ===== CPU 温度告警 =====
+
+      # CPU 温度过高 - Warning
+      - alert: HardwareCPUTemperatureWarning
+        expr: redfish_cpu_temperature > 80
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: cpu
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} CPU {{ $labels.cpu }} 温度偏高"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **CPU**: {{ $labels.cpu }}
+            **当前温度**: {{ $value }}°C
+            **阈值**: 80°C
+
+            **可能原因**:
+            - 机房温度过高
+            - 风扇故障或转速不足
+            - CPU 散热器灰尘过多
+            - CPU 负载过高
+
+            **处理步骤**:
+            1. 检查机房空调系统
+            2. 检查风扇状态和转速
+            3. 清理散热器灰尘
+            4. 降低 CPU 负载
+          runbook_url: "https://your-wiki.com/runbooks/hardware-cpu-temp"
+
+      # CPU 温度过高 - Critical
+      - alert: HardwareCPUTemperatureCritical
+        expr: redfish_cpu_temperature > 90
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: cpu
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} CPU {{ $labels.cpu }} 温度严重过高"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **CPU**: {{ $labels.cpu }}
+            **当前温度**: {{ $value }}°C
+            **阈值**: 90°C
+
+            **紧急**: 可能导致 CPU 降频或关机
+
+            **立即行动**:
+            1. 立即检查风扇是否故障
+            2. 如风扇故障，立即更换
+            3. 考虑降低服务器负载
+            4. 必要时紧急停机保护硬件
+          runbook_url: "https://your-wiki.com/runbooks/hardware-cpu-temp-critical"
+
+      # ===== 内存告警 =====
+
+      # 内存 ECC 错误
+      - alert: HardwareMemoryECCWarnings
+        expr: redfish_memory_ecc_errors > 0
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: memory
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 检测到内存 ECC 错误"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **内存**: {{ $labels.memory }}
+            **ECC 错误数**: {{ $value }}
+
+            **影响**: 内存数据完整性可能受影响
+
+            **处理步骤**:
+            1. 记录错误发生时间和频率
+            2. 运行内存诊断测试
+            3. 如错误持续增加，建议更换内存条
+            4. 检查内存插槽是否有问题
+          runbook_url: "https://your-wiki.com/runbooks/hardware-memory-ecc"
+
+      # 内存健康状态异常
+      - alert: HardwareMemoryHealthCritical
+        expr: redfish_memory_health_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: memory
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 内存 {{ $labels.memory }} 健康状态异常"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **内存**: {{ $labels.memory }}
+            **健康状态**: {{ $value }}
+
+            **立即行动**:
+            1. 立即更换故障内存条
+            2. 检查内存插槽是否损坏
+            3. 更换后运行内存测试
+          runbook_url: "https://your-wiki.com/runbooks/hardware-memory-health"
+
+      # ===== 磁盘告警 =====
+
+      # 磁盘温度过高
+      - alert: HardwareDiskTemperatureWarning
+        expr: redfish_disk_temperature > 55
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: disk
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 磁盘 {{ $labels.disk }} 温度偏高"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **磁盘**: {{ $labels.disk }}
+            **当前温度**: {{ $value }}°C
+            **阈值**: 55°C
+
+            **处理步骤**:
+            1. 检查机箱风扇状态
+            2. 检查磁盘是否有异常噪音
+            3. 确保机箱通风良好
+          runbook_url: "https://your-wiki.com/runbooks/hardware-disk-temp"
+
+      # 磁盘温度严重过高
+      - alert: HardwareDiskTemperatureCritical
+        expr: redfish_disk_temperature > 65
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: disk
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 磁盘 {{ $labels.disk }} 温度严重过高"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **磁盘**: {{ $labels.disk }}
+            **当前温度**: {{ $value }}°C
+            **阈值**: 65°C
+
+            **紧急**: 磁盘可能即将损坏
+
+            **立即行动**:
+            1. 立即备份数据
+            2. 更换故障磁盘
+            3. 检查机箱散热系统
+          runbook_url: "https://your-wiki.com/runbooks/hardware-disk-temp-critical"
+
+      # 磁盘预测性故障
+      - alert: HardwareDiskPredictFailure
+        expr: redfish_disk_predict_failure == 1
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: hardware
+          component: disk
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 磁盘 {{ $labels.disk }} 预测即将故障"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **磁盘**: {{ $labels.disk }}
+
+            **影响**: 磁盘 SMART 属性显示可能即将故障
+
+            **处理步骤**:
+            1. 立即备份数据
+            2. 更换磁盘
+            3. 重建 RAID 阵列
+          runbook_url: "https://your-wiki.com/runbooks/hardware-disk-predict-failure"
+
+      # 磁盘媒体错误
+      - alert: HardwareDiskMediaErrors
+        expr: redfish_drive_media_errors > 0
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: hardware
+          component: disk
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 磁盘 {{ $labels.disk }} 出现媒体错误"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **磁盘**: {{ $labels.disk }}
+            **错误数**: {{ $value }}
+
+            **处理步骤**:
+            1. 检查磁盘 SMART 信息
+            2. 备份数据
+            3. 考虑更换磁盘
+          runbook_url: "https://your-wiki.com/runbooks/hardware-disk-media-errors"
+
+      # 磁盘健康状态异常
+      - alert: HardwareDiskHealthCritical
+        expr: redfish_disk_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: disk
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 磁盘 {{ $labels.disk }} 健康状态异常"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **磁盘**: {{ $labels.disk }}
+            **状态**: {{ $value }}
+
+            **立即行动**:
+            1. 检查 RAID 状态
+            2. 如磁盘故障，立即更换
+            3. 重建 RAID 阵列
+          runbook_url: "https://your-wiki.com/runbooks/hardware-disk-health"
+
+      # ===== 风扇告警 =====
+
+      # 风扇转速过低
+      - alert: HardwareFanSpeedLow
+        expr: redfish_fan_speed < 1000
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: fan
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 风扇 {{ $labels.fan }} 转速过低"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **风扇**: {{ $labels.fan }}
+            **当前转速**: {{ $value }} RPM
+            **阈值**: 1000 RPM
+
+            **处理步骤**:
+            1. 检查风扇是否被灰尘堵塞
+            2. 检查风扇电源连接
+            3. 必要时更换风扇
+          runbook_url: "https://your-wiki.com/runbooks/hardware-fan-speed"
+
+      # 风扇故障
+      - alert: HardwareFanFailed
+        expr: redfish_fan_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: fan
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 风扇 {{ $labels.fan }} 故障"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **风扇**: {{ $labels.fan }}
+
+            **紧急**: 可能导致系统过热
+
+            **立即行动**:
+            1. 立即更换故障风扇
+            2. 检查系统温度
+            3. 防止进一步过热
+          runbook_url: "https://your-wiki.com/runbooks/hardware-fan-failed"
+
+      # ===== 电源告警 =====
+
+      # 电源供应故障
+      - alert: HardwarePowerSupplyFailed
+        expr: redfish_power_supply_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: power
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 电源 {{ $labels.power_supply }} 故障"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **电源**: {{ $labels.power_supply }}
+
+            **影响**: 供电冗余可能失效
+
+            **立即行动**:
+            1. 检查是否有备用电源工作
+            2. 立即更换故障电源
+            3. 确保供电冗余正常
+          runbook_url: "https://your-wiki.com/runbooks/hardware-power-failed"
+
+      # ===== 温度告警 =====
+
+      # 进风口温度偏高
+      - alert: HardwareInletTemperatureWarning
+        expr: redfish_inlet_temperature > 30
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: system
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 进风口温度偏高"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **进风口温度**: {{ $value }}°C
+            **阈值**: 30°C
+
+            **可能原因**:
+            - 机房空调不足
+            - 机架通风不良
+            - 服务器布局过于密集
+
+            **处理步骤**:
+            1. 检查机房空调系统
+            2. 检查机架通风
+            3. 调整服务器布局
+          runbook_url: "https://your-wiki.com/runbooks/hardware-inlet-temp"
+
+      # 出风口温度偏高
+      - alert: HardwareExhaustTemperatureWarning
+        expr: redfish_exhaust_temperature > 45
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: system
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 出风口温度偏高"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **出风口温度**: {{ $value }}°C
+            **阈值**: 45°C
+
+            **处理步骤**:
+            1. 检查风扇状态
+            2. 检查服务器负载
+            3. 改善机架通风
+          runbook_url: "https://your-wiki.com/runbooks/hardware-exhaust-temp"
+
+      # ===== 功耗告警 =====
+
+      # 功耗异常高
+      - alert: HardwarePowerConsumptionHigh
+        expr: redfish_power_consumed_watts > 800
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: power
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 功耗偏高"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **当前功耗**: {{ $value }} W
+            **阈值**: 800 W
+
+            **处理步骤**:
+            1. 检查服务器负载
+            2. 检查是否有异常进程
+            3. 评估是否需要优化或扩容
+          runbook_url: "https://your-wiki.com/runbooks/hardware-power-consumption"
+
+      # ===== 其他硬件告警 =====
+
+      # RAID 控制器状态异常
+      - alert: HardwareRAIDControllerFailed
+        expr: redfish_raid_controller_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: raid
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} RAID 控制器 {{ $labels.raid_controller }} 状态异常"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **RAID 控制器**: {{ $labels.raid_controller }}
+
+            **影响**: 存储系统可能不可用
+
+            **立即行动**:
+            1. 检查 RAID 控制器日志
+            2. 如控制器故障，立即更换
+            3. 恢复数据
+          runbook_url: "https://your-wiki.com/runbooks/hardware-raid-failed"
+
+      # 网络接口状态异常
+      - alert: HardwareNetworkInterfaceFailed
+        expr: redfish_network_interface_status != 1
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: network
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 网络接口 {{ $labels.network_interface }} 状态异常"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **网络接口**: {{ $labels.network_interface }}
+
+            **处理步骤**:
+            1. 检查网线连接
+            2. 检查交换机端口
+            3. 检查驱动程序
+          runbook_url: "https://your-wiki.com/runbooks/hardware-network-failed"
+
+      # BMC/iDRAC/iLO 不可达
+      - alert: HardwareBMCDown
+        expr: up{job="redfish-hardware"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: bmc
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} BMC/iDRAC/iLO 不可达"
+          description: |
+            **服务器**: {{ $labels.instance }}
+
+            **可能原因**:
+            - BMC 服务故障
+            - 网络不可达
+            - BMC IP 地址变更
+
+            **处理步骤**:
+            1. 检查网络连通性
+            2. 登录服务器检查 BMC 服务
+            3. 重启 BMC 服务
+          runbook_url: "https://your-wiki.com/runbooks/hardware-bmc-down"
+
+# ===================================================================
+# IPMI 硬件监控告警（老服务器兜底方案）
+# ===================================================================
+
+  - name: ipmi-hardware-alerts
+    interval: 30s
+    rules:
+
+      # IPMI 传感器故障
+      - alert: IPMISensorFailed
+        expr: ipmi_sensor_status != 1
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: sensor
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} IPMI 传感器 {{ $labels.sensor }} 故障"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **传感器**: {{ $labels.sensor }}
+
+            **处理步骤**:
+            1. 检查传感器物理连接
+            2. 更换故障传感器
+          runbook_url: "https://your-wiki.com/runbooks/ipmi-sensor-failed"
+
+      # IPMI 温度告警
+      - alert: IPMITemperatureHigh
+        expr: ipmi_temperature_celsius > 80
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: temperature
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} IPMI 温度偏高"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **温度**: {{ $value }}°C
+
+            **处理步骤**:
+            1. 检查风扇状态
+            2. 检查机房温度
+          runbook_url: "https://your-wiki.com/runbooks/ipmi-temp-high"
+
+      # IPMI 风扇故障
+      - alert: IPMIFanFailed
+        expr: ipmi_fan_status != 1
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: fan
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} IPMI 风扇 {{ $labels.fan }} 故障"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **风扇**: {{ $labels.fan }}
+
+            **立即行动**:
+            1. 立即更换故障风扇
+          runbook_url: "https://your-wiki.com/runbooks/ipmi-fan-failed"
+
+      # IPMI 电源故障
+      - alert: IPMIPowerSupplyFailed
+        expr: ipmi_power_supply_status != 1
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: power
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} IPMI 电源 {{ $labels.power_supply }} 故障"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **电源**: {{ $labels.power_supply }}
+
+            **立即行动**:
+            1. 立即更换故障电源
+          runbook_url: "https://your-wiki.com/runbooks/ipmi-power-failed"
+
+# ===================================================================
+# 告警规则说明:
+#
+# 1. 告警优先级:
+#    - P0: 硬件故障，需要立即处理（CPU 温度过高、磁盘故障、风扇故障等）
+#    - P1: 预测性故障，需要尽快处理（磁盘预测故障、ECC 错误等）
+#    - P2: 警告级别，需要关注（温度偏高、转速偏低等）
+#
+# 2. 告警持续时间 (for):
+#    - Critical: 2 分钟（快速响应）
+#    - Warning: 5-10 分钟（避免误报）
+#
+# 3. 监控策略:
+#    - 新服务器: Redfish（推荐，支持更多指标）
+#    - 老服务器: IPMI（兜底方案）
+#    - 混合环境: 两种方案并行
+#
+# 4. 温度阈值参考:
+#    - CPU 温度: Warning 80°C, Critical 90°C
+#    - 磁盘温度: Warning 55°C, Critical 65°C
+#    - 进风口温度: Warning 30°C
+#    - 出风口温度: Warning 45°C
+#
+# 5. 告警抑制:
+#    - 系统健康异常时，抑制组件级告警
+#    - BMC 不可达时，抑制所有硬件告警
+#
+# 更多文档: docs/HARDWARE-MONITORING.md
+# ===================================================================
+
+# ===================================================================
+# VMware 联动告警规则
+# 用途: 关联物理服务器硬件故障与虚拟机影响
+# ===================================================================
+
+  - name: hardware-vmware-alerts
+    interval: 60s
+    rules:
+
+      # 物理服务器故障影响虚拟机
+      - alert: PhysicalServerFailureImpactVM
+        expr: |
+          redfish_system_health_status != 1
+          and on(instance) (
+            count(vsphere_vm_power_state{power_state="poweredOn"}) by (instance) > 0
+          )
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: system
+          subcategory: vmware
+        annotations:
+          summary: "🔴 物理服务器 {{ $labels.instance }} 故障影响 {{ $value }} 台虚拟机"
+          description: |
+            **物理服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **影响虚拟机数量**: {{ $value }}
+
+            **影响范围**:
+            - 虚拟机可能无法访问
+            - 业务中断
+
+            **处理步骤**:
+            1. 立即检查物理服务器硬件状态
+            2. 查看受影响的虚拟机列表
+            3. 考虑迁移虚拟机到其他主机
+            4. 修复物理服务器硬件问题
+          runbook_url: "https://your-wiki.com/runbooks/physical-server-vm-impact"
+
+      # CPU 温度过高影响虚拟机性能
+      - alert: HardwareCPUTemperatureImpactVM
+        expr: |
+          redfish_cpu_temperature > 85
+          and on(instance) (
+            avg(vsphere_vm_cpu_usage_average{power_state="poweredOn"}) by (instance) > 70
+          )
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: hardware
+          component: cpu
+          subcategory: vmware
+        annotations:
+          summary: "⚠️ 物理服务器 {{ $labels.instance }} CPU 温度过高影响虚拟机性能"
+          description: |
+            **物理服务器**: {{ $labels.instance }}
+            **CPU**: {{ $labels.cpu }}
+            **当前温度**: {{ $value }}°C
+            **虚拟机平均 CPU 使用率**: {{ $value }}%
+
+            **影响**:
+            - CPU 可能降频
+            - 虚拟机性能下降
+
+            **处理步骤**:
+            1. 检查风扇状态
+            2. 考虑迁移部分虚拟机
+            3. 降低服务器负载
+          runbook_url: "https://your-wiki.com/runbooks/cpu-temp-vm-impact"
+
+      # 内存故障影响虚拟机
+      - alert: HardwareMemoryFailureImpactVM
+        expr: |
+          redfish_memory_health_status != 1
+          and on(instance) (
+            count(vsphere_vm_memory_usage_average{power_state="poweredOn"}) by (instance) > 0
+          )
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: memory
+          subcategory: vmware
+        annotations:
+          summary: "🔴 物理服务器 {{ $labels.instance }} 内存故障影响 {{ $value }} 台虚拟机"
+          description: |
+            **物理服务器**: {{ $labels.instance }}
+            **内存**: {{ $labels.memory }}
+            **影响虚拟机数量**: {{ $value }}
+
+            **影响**:
+            - 虚拟机可能崩溃
+            - 数据损坏风险
+
+            **处理步骤**:
+            1. 立即迁移受影响的虚拟机
+            2. 更换故障内存
+          runbook_url: "https://your-wiki.com/runbooks/memory-failure-vm-impact"
+
+      # 磁盘故障影响虚拟机
+      - alert: HardwareDiskFailureImpactVM
+        expr: |
+          redfish_disk_status != 1
+          and on(instance) (
+            count(vsphere_vm_disk_usage_average{power_state="poweredOn"}) by (instance) > 0
+          )
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: disk
+          subcategory: vmware
+        annotations:
+          summary: "🔴 物理服务器 {{ $labels.instance }} 磁盘故障影响 {{ $value }} 台虚拟机"
+          description: |
+            **物理服务器**: {{ $labels.instance }}
+            **磁盘**: {{ $labels.disk }}
+            **影响虚拟机数量**: {{ $value }}
+
+            **影响**:
+            - 虚拟机磁盘 I/O 异常
+            - 数据丢失风险
+
+            **处理步骤**:
+            1. 立即备份受影响的虚拟机
+            2. 迁移虚拟机到其他主机
+            3. 更换故障磁盘
+          runbook_url: "https://your-wiki.com/runbooks/disk-failure-vm-impact"
+
+      # 电源故障影响虚拟机
+      - alert: HardwarePowerSupplyFailureImpactVM
+        expr: |
+          redfish_power_supply_status != 1
+          and on(instance) (
+            count(vsphere_vm_power_state{power_state="poweredOn"}) by (instance) > 0
+          )
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: power
+          subcategory: vmware
+        annotations:
+          summary: "🔴 物理服务器 {{ $labels.instance }} 电源故障影响 {{ $value }} 台虚拟机"
+          description: |
+            **物理服务器**: {{ $labels.instance }}
+            **电源**: {{ $labels.power_supply }}
+            **影响虚拟机数量**: {{ $value }}
+
+            **影响**:
+            - 服务器可能意外关机
+            - 所有虚拟机中断
+
+            **处理步骤**:
+            1. 立即迁移所有虚拟机
+            2. 更换故障电源
+            3. 检查电源冗余配置
+          runbook_url: "https://your-wiki.com/runbooks/power-failure-vm-impact"
+
+      # 物理服务器容量不足告警
+      - alert: PhysicalServerCapacityWarning
+        expr: |
+          (
+            (vsphere_host_cpu_usage_average > 80) or 
+            (vsphere_host_memory_usage_average > 85)
+          )
+          and on(instance) (
+            redfish_system_health_status == 1
+          )
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: capacity
+          subcategory: vmware
+        annotations:
+          summary: "⚠️ 物理服务器 {{ $labels.instance }} 容量接近上限"
+          description: |
+            **物理服务器**: {{ $labels.instance }}
+            **CPU 使用率**: {{ $labels.cpu_usage }}%
+            **内存使用率**: {{ $labels.memory_usage }}%
+
+            **影响**:
+            - 无法创建新虚拟机
+            - 现有虚拟机性能下降
+
+            **处理步骤**:
+            1. 迁移部分虚拟机到其他主机
+            2. 考虑扩容
+          runbook_url: "https://your-wiki.com/runbooks/capacity-warning"
+
+# ===================================================================
+# 硬件生命周期管理告警规则
+# 用途: 保修、老化、容量规划
+# ===================================================================
+
+  - name: hardware-lifecycle-alerts
+    interval: 60s
+    rules:
+
+      # 保修即将到期告警（90天）
+      - alert: HardwareWarrantyExpiring
+        expr: |
+          redfish_warranty_days_remaining > 0 
+          and redfish_warranty_days_remaining <= 90
+        for: 1m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: warranty
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 保修即将到期"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **剩余保修天数**: {{ $value }} 天
+            **保修到期日期**: {{ $labels.warranty_expiry }}
+
+            **建议操作**:
+            - 联系厂商续保
+            - 评估是否需要更换设备
+          runbook_url: "https://your-wiki.com/runbooks/warranty-expiring"
+
+      # 保修已到期告警
+      - alert: HardwareWarrantyExpired
+        expr: |
+          redfish_warranty_days_remaining <= 0
+        for: 1m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: warranty
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 保修已到期"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **保修到期日期**: {{ $labels.warranty_expiry }}
+
+            **建议操作**:
+            - 联系厂商续保（如可能）
+            - 制定设备更换计划
+          runbook_url: "https://your-wiki.com/runbooks/warranty-expired"
+
+      # 硬件老化告警（运行超过5年）
+      - alert: HardwareAging
+        expr: |
+          (time() - redfish_install_date) / (365 * 24 * 3600) > 5
+        for: 1m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: aging
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 已运行超过 5 年"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **运行年限**: {{ $value }} 年
+
+            **建议操作**:
+            - 制定设备更换计划
+            - 增加监控频率
+            - 准备备用设备
+          runbook_url: "https://your-wiki.com/runbooks/hardware-aging"
+
+      # 硬件严重老化告警（运行超过7年）
+      - alert: HardwareSevereAging
+        expr: |
+          (time() - redfish_install_date) / (365 * 24 * 3600) > 7
+        for: 1m
+        labels:
+          severity: critical
+          priority: P1
+          category: hardware
+          component: aging
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 已运行超过 7 年，建议立即更换"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **运行年限**: {{ $value }} 年
+
+            **建议操作**:
+            - 立即制定设备更换计划
+            - 增加监控和备份频率
+            - 准备备用设备
+          runbook_url: "https://your-wiki.com/runbooks/hardware-severe-aging"
+
+      # 硬盘故障率过高告警
+      - alert: HardwareDiskFailureRateHigh
+        expr: |
+          count(redfish_disk_status != 1) by (instance) 
+          / count(redfish_disk_status) by (instance) > 0.2
+        for: 10m
+        labels:
+          severity: critical
+          priority: P1
+          category: hardware
+          component: disk
+          subcategory: lifecycle
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 硬盘故障率过高"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **硬盘故障率**: {{ $value | humanizePercentage }}
+
+            **建议操作**:
+            - 立即更换故障硬盘
+            - 检查是否需要更换所有硬盘
+            - 制定扩容或更换计划
+          runbook_url: "https://your-wiki.com/runbooks/disk-failure-rate-high"
+
+      # 容量规划告警（机架级别）
+      - alert: RackCapacityPlanning
+        expr: |
+          count(redfish_disk_status == 1) by (rack) 
+          / count(redfish_disk_status) by (rack) < 0.8
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: capacity
+          subcategory: planning
+        annotations:
+          summary: "⚠️ 机架 {{ $labels.rack }} 硬盘故障率过高，建议扩容"
+          description: |
+            **机架**: {{ $labels.rack }}
+            **健康硬盘率**: {{ $value | humanizePercentage }}
+
+            **建议操作**:
+            - 制定扩容计划
+            - 检查是否需要更换机架
+          runbook_url: "https://your-wiki.com/runbooks/rack-capacity-planning"
+
+      # 资产标签缺失告警
+      - alert: HardwareAssetTagMissing
+        expr: |
+          redfish_asset_tag == ""
+        for: 1m
+        labels:
+          severity: warning
+          priority: P3
+          category: hardware
+          component: asset
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 缺少资产标签"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **序列号**: {{ $labels.serial_number }}
+
+            **建议操作**:
+            - 添加资产标签
+            - 更新资产管理系统
+          runbook_url: "https://your-wiki.com/runbooks/asset-tag-missing"
+
+# ===================================================================
+# 硬件故障 + 自动工单告警规则
+# 用途: 硬件故障自动创建工单，自动化运维流程
+# ===================================================================
+
+  - name: hardware-auto-ticket-alerts
+    interval: 60s
+    rules:
+
+      # 磁盘故障自动创建工单
+      - alert: DiskFailureAutoTicket
+        expr: |
+          redfish_disk_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: disk
+          subcategory: ticket
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 磁盘故障，已自动创建工单"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **磁盘**: {{ $labels.disk }}
+            **序列号**: {{ $labels.serial_number }}
+
+            **工单信息**:
+            - 工单系统: Jira
+            - 工单类型: 硬件故障
+            - 分配给: 硬件团队
+            - 优先级: 最高
+            - 工单号: {{ $labels.ticket_id }}
+
+            **处理步骤**:
+            1. 查看工单详情
+            2. 备份数据
+            3. 更换故障磁盘
+          auto_ticket: true
+          ticket_system: jira
+          ticket_type: hardware_failure
+          assignee: hardware-team
+          ticket_id: "{{ $labels.ticket_id }}"
+          runbook_url: "https://your-wiki.com/runbooks/disk-failure-ticket"
+
+      # 内存故障自动创建工单
+      - alert: MemoryFailureAutoTicket
+        expr: |
+          redfish_memory_health_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: memory
+          subcategory: ticket
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 内存故障，已自动创建工单"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **内存**: {{ $labels.memory }}
+            **序列号**: {{ $labels.serial_number }}
+
+            **工单信息**:
+            - 工单系统: Jira
+            - 工单类型: 硬件故障
+            - 分配给: 硬件团队
+            - 优先级: 最高
+            - 工单号: {{ $labels.ticket_id }}
+
+            **处理步骤**:
+            1. 查看工单详情
+            2. 迁移虚拟机（如需要）
+            3. 更换故障内存
+          auto_ticket: true
+          ticket_system: jira
+          ticket_type: hardware_failure
+          assignee: hardware-team
+          ticket_id: "{{ $labels.ticket_id }}"
+          runbook_url: "https://your-wiki.com/runbooks/memory-failure-ticket"
+
+      # 电源故障自动创建工单
+      - alert: PowerSupplyFailureAutoTicket
+        expr: |
+          redfish_power_supply_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: power
+          subcategory: ticket
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 电源故障，已自动创建工单"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **电源**: {{ $labels.power_supply }}
+            **序列号**: {{ $labels.serial_number }}
+
+            **工单信息**:
+            - 工单系统: Jira
+            - 工单类型: 硬件故障
+            - 分配给: 硬件团队
+            - 优先级: 最高
+            - 工单号: {{ $labels.ticket_id }}
+
+            **处理步骤**:
+            1. 查看工单详情
+            2. 检查电源冗余
+            3. 更换故障电源
+          auto_ticket: true
+          ticket_system: jira
+          ticket_type: hardware_failure
+          assignee: hardware-team
+          ticket_id: "{{ $labels.ticket_id }}"
+          runbook_url: "https://your-wiki.com/runbooks/power-failure-ticket"
+
+      # 风扇故障自动创建工单
+      - alert: FanFailureAutoTicket
+        expr: |
+          redfish_fan_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: hardware
+          component: fan
+          subcategory: ticket
+        annotations:
+          summary: "🔴 服务器 {{ $labels.instance }} 风扇故障，已自动创建工单"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **风扇**: {{ $labels.fan }}
+            **序列号**: {{ $labels.serial_number }}
+
+            **工单信息**:
+            - 工单系统: Jira
+            - 工单类型: 硬件故障
+            - 分配给: 硬件团队
+            - 优先级: 高
+            - 工单号: {{ $labels.ticket_id }}
+
+            **处理步骤**:
+            1. 查看工单详情
+            2. 检查温度
+            3. 更换故障风扇
+          auto_ticket: true
+          ticket_system: jira
+          ticket_type: hardware_failure
+          assignee: hardware-team
+          ticket_id: "{{ $labels.ticket_id }}"
+          runbook_url: "https://your-wiki.com/runbooks/fan-failure-ticket"
+
+      # 保修到期自动创建采购工单
+      - alert: WarrantyExpiringAutoTicket
+        expr: |
+          redfish_warranty_days_remaining > 0 
+          and redfish_warranty_days_remaining <= 90
+        for: 1m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: warranty
+          subcategory: ticket
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 保修即将到期，已自动创建采购工单"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **剩余保修天数**: {{ $value }} 天
+            **保修到期日期**: {{ $labels.warranty_expiry }}
+
+            **工单信息**:
+            - 工单系统: Jira
+            - 工单类型: 采购申请
+            - 分配给: 采购团队
+            - 优先级: 中
+            - 工单号: {{ $labels.ticket_id }}
+
+            **处理步骤**:
+            1. 查看工单详情
+            2. 联系厂商续保
+            3. 评估是否需要更换设备
+          auto_ticket: true
+          ticket_system: jira
+          ticket_type: procurement
+          assignee: procurement-team
+          ticket_id: "{{ $labels.ticket_id }}"
+          runbook_url: "https://your-wiki.com/runbooks/warranty-expiring-ticket"
+
+      # 设备老化自动创建更换工单
+      - alert: HardwareAgingAutoTicket
+        expr: |
+          (time() - redfish_install_date) / (365 * 24 * 3600) > 7
+        for: 1m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: aging
+          subcategory: ticket
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 已运行超过 7 年，已自动创建更换工单"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **运行年限**: {{ $value }} 年
+
+            **工单信息**:
+            - 工单系统: Jira
+            - 工单类型: 设备更换
+            - 分配给: 硬件团队
+            - 优先级: 中
+            - 工单号: {{ $labels.ticket_id }}
+
+            **处理步骤**:
+            1. 查看工单详情
+            2. 制定设备更换计划
+            3. 准备预算和采购
+          auto_ticket: true
+          ticket_system: jira
+          ticket_type: equipment_replacement
+          assignee: hardware-team
+          ticket_id: "{{ $labels.ticket_id }}"
+          runbook_url: "https://your-wiki.com/runbooks/hardware-aging-ticket"
+
+      # 资产变更自动同步 CMDB
+      - alert: AssetChangeAutoSyncCMDB
+        expr: |
+          changes(redfish_asset_tag[1h]) > 0
+        for: 1m
+        labels:
+          severity: info
+          priority: P3
+          category: hardware
+          component: asset
+          subcategory: cmdb
+        annotations:
+          summary: "ℹ️ 服务器 {{ $labels.instance }} 资产信息已变更，已自动同步到 CMDB"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **资产标签**: {{ $labels.asset_tag }}
+            **序列号**: {{ $labels.serial_number }}
+
+            **同步信息**:
+            - CMDB 系统: ServiceNow
+            - 同步类型: 资产更新
+            - 同步时间: {{ $value }}
+
+            **处理步骤**:
+            1. 确认 CMDB 同步成功
+            2. 验证资产信息
+            3. 更新相关文档
+          auto_sync: true
+          sync_target: cmdb
+          sync_type: asset_update
+          runbook_url: "https://your-wiki.com/runbooks/asset-sync-cmdb"
+
+# ===================================================================
+# 固件/BIOS 版本监控告警规则
+# 用途: 监控固件和 BIOS 版本，提醒升级
+# ===================================================================
+
+  - name: hardware-firmware-alerts
+    interval: 60s
+    rules:
+
+      # 固件版本过低告警
+      - alert: HardwareFirmwareOutdated
+        expr: |
+          redfish_firmware_version < "2.8.0"
+        for: 1m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: firmware
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} 固件版本过低"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **当前版本**: {{ $labels.firmware_version }}
+            **建议版本**: 2.8.0 或更高
+
+            **建议操作**:
+            - 查看厂商发布的固件更新
+            - 在维护窗口升级固件
+            - 升级前备份配置
+          runbook_url: "https://your-wiki.com/runbooks/firmware-outdated"
+
+      # BIOS 版本过低告警
+      - alert: HardwareBIOSOutdated
+        expr: |
+          redfish_bios_version < "2.10.0"
+        for: 1m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: bios
+        annotations:
+          summary: "⚠️ 服务器 {{ $labels.instance }} BIOS 版本过低"
+          description: |
+            **服务器**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+            **当前版本**: {{ $labels.bios_version }}
+            **建议版本**: 2.10.0 或更高
+
+            **建议操作**:
+            - 查看厂商发布的 BIOS 更新
+            - 在维护窗口升级 BIOS
+            - 升级前备份配置
+          runbook_url: "https://your-wiki.com/runbooks/bios-outdated"
+
+      # 固件版本不一致告警（同一型号）
+      - alert: HardwareFirmwareVersionMismatch
+        expr: |
+          count by (vendor, model) (redfish_firmware_version) 
+          > 1
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: firmware
+        annotations:
+          summary: "⚠️ 同型号服务器 {{ $labels.vendor }} {{ $labels.model }} 固件版本不一致"
+          description: |
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+
+            **建议操作**:
+            - 统一固件版本
+            - 避免兼容性问题
+          runbook_url: "https://your-wiki.com/runbooks/firmware-mismatch"
+
+      # BIOS 版本不一致告警（同一型号）
+      - alert: HardwareBIOSVersionMismatch
+        expr: |
+          count by (vendor, model) (redfish_bios_version) 
+          > 1
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: hardware
+          component: bios
+        annotations:
+          summary: "⚠️ 同型号服务器 {{ $labels.vendor }} {{ $labels.model }} BIOS 版本不一致"
+          description: |
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+
+            **建议操作**:
+            - 统一 BIOS 版本
+            - 避免兼容性问题
+          runbook_url: "https://your-wiki.com/runbooks/bios-mismatch"

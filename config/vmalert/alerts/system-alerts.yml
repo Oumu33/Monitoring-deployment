@@ -1,7 +1,500 @@
 # ===================================================================
-# 监控系统自身健康告警
-# 用途: 监控 VictoriaMetrics 生态组件的健康状态
+# Metrics + Logs 深度联动告警规则
+# 用途: 告警自动触发日志查询，快速定位问题
 # ===================================================================
+
+  - name: metrics-logs-alerts
+    interval: 30s
+    rules:
+
+      # HTTP 错误率过高 + 自动日志查询
+      - alert: HighHTTPErrorRate
+        expr: |
+          rate(http_requests_total{status=~"5.."}[5m]) 
+          / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: application
+          component: http
+          subcategory: logs
+        annotations:
+          summary: "⚠️ 服务 {{ $labels.instance }} HTTP 错误率过高"
+          description: |
+            **服务**: {{ $labels.instance }}
+            **错误率**: {{ $value | humanizePercentage }}
+            **状态码**: {{ $labels.status }}
+
+            **自动日志查询**:
+            ```logql
+            {job="{{ $labels.job }}", instance="{{ $labels.instance }}"} 
+            |~ "error|Error|ERROR" 
+            | line_format "{{.timestamp}} {{.message}}"
+            ```
+
+            **处理步骤**:
+            1. 查看上述日志查询结果
+            2. 分析错误日志模式
+            3. 定位根因并修复
+          log_query: '{job="{{ $labels.job }}", instance="{{ $labels.instance }}"} |~ "error|Error|ERROR"'
+          grafana_url: "http://localhost:3000/d/logs-explorer?expr={job=%22{{ $labels.job }}%22,%20instance=%22{{ $labels.instance }}%22}%20%7C~%20%22error%7CError%7CERROR%22"
+          runbook_url: "https://your-wiki.com/runbooks/http-error-rate"
+
+      # CPU 使用率过高 + 自动日志查询
+      - alert: HighCPUUsageWithLogs
+        expr: |
+          rate(node_cpu_seconds_total{mode="idle"}[5m]) < 0.1
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: host
+          component: cpu
+          subcategory: logs
+        annotations:
+          summary: "⚠️ 主机 {{ $labels.instance }} CPU 使用率过高"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **CPU 使用率**: {{ $value | humanizePercentage }}
+
+            **自动日志查询**:
+            ```logql
+            {host="{{ $labels.instance }}"} 
+            |~ "cpu|CPU|process|Process" 
+            | level != "debug"
+            ```
+
+            **处理步骤**:
+            1. 查看上述日志查询结果
+            2. 识别高 CPU 进程
+            3. 优化或终止异常进程
+          log_query: '{host="{{ $labels.instance }}"} |~ "cpu|CPU|process|Process" | level != "debug"'
+          grafana_url: "http://localhost:3000/d/logs-explorer?expr={host=%22{{ $labels.instance }}%22}%20%7C~%20%22cpu%7CCPU%7Cprocess%7CProcess%22%20%7C%20level%20!=%20%22debug%22"
+          runbook_url: "https://your-wiki.com/runbooks/high-cpu-usage"
+
+      # 内存使用率过高 + 自动日志查询
+      - alert: HighMemoryUsageWithLogs
+        expr: |
+          (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: host
+          component: memory
+          subcategory: logs
+        annotations:
+          summary: "⚠️ 主机 {{ $labels.instance }} 内存使用率过高"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **内存使用率**: {{ $value | humanizePercentage }}
+
+            **自动日志查询**:
+            ```logql
+            {host="{{ $labels.instance }}"} 
+            |~ "oom|OOM|memory|Memory" 
+            | level =~ "error|warning"
+            ```
+
+            **处理步骤**:
+            1. 查看上述日志查询结果
+            2. 检查是否有 OOM Killer
+            3. 优化内存使用或增加内存
+          log_query: '{host="{{ $labels.instance }}"} |~ "oom|OOM|memory|Memory" | level =~ "error|warning"'
+          grafana_url: "http://localhost:3000/d/logs-explorer?expr={host=%22{{ $labels.instance }}%22}%20%7C~%20%22oom%7COOM%7Cmemory%7CMemory%22%20%7C%20level%20=~%20%22error%7Cwarning%22"
+          runbook_url: "https://your-wiki.com/runbooks/high-memory-usage"
+
+      # 磁盘 IO 过高 + 自动日志查询
+      - alert: HighDiskIOWithLogs
+        expr: |
+          rate(node_disk_io_time_seconds_total[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: host
+          component: disk
+          subcategory: logs
+        annotations:
+          summary: "⚠️ 主机 {{ $labels.instance }} 磁盘 IO 过高"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **磁盘**: {{ $labels.device }}
+            **IO 使用率**: {{ $value | humanizePercentage }}
+
+            **自动日志查询**:
+            ```logql
+            {host="{{ $labels.instance }}"} 
+            |~ "disk|Disk|io|IO|iowait" 
+            | level != "debug"
+            ```
+
+            **处理步骤**:
+            1. 查看上述日志查询结果
+            2. 识别高 IO 进程
+            3. 优化磁盘访问或升级存储
+          log_query: '{host="{{ $labels.instance }}"} |~ "disk|Disk|io|IO|iowait" | level != "debug"'
+          grafana_url: "http://localhost:3000/d/logs-explorer?expr={host=%22{{ $labels.instance }}%22}%20%7C~%20%22disk%7CDisk%7Cio%7CIO%7Ciowait%22%20%7C%20level%20!=%20%22debug%22"
+          runbook_url: "https://your-wiki.com/runbooks/high-disk-io"
+
+      # 网络错误率过高 + 自动日志查询
+      - alert: HighNetworkErrorsWithLogs
+        expr: |
+          rate(node_network_receive_errs_total[5m]) > 100
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: host
+          component: network
+          subcategory: logs
+        annotations:
+          summary: "⚠️ 主机 {{ $labels.instance }} 网络错误率过高"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **接口**: {{ $labels.device }}
+            **错误速率**: {{ $value }} errors/sec
+
+            **自动日志查询**:
+            ```logql
+            {host="{{ $labels.instance }}"} 
+            |~ "network|Network|ethernet|Ethernet|crc|CRC" 
+            | level =~ "error|warning"
+            ```
+
+            **处理步骤**:
+            1. 查看上述日志查询结果
+            2. 检查网络线缆和接口
+            3. 联系网络团队排查
+          log_query: '{host="{{ $labels.instance }}"} |~ "network|Network|ethernet|Ethernet|crc|CRC" | level =~ "error|warning"'
+          grafana_url: "http://localhost:3000/d/logs-explorer?expr={host=%22{{ $labels.instance }}%22}%20%7C~%20%22network%7CNetwork%7Cethernet%7CEthernet%7Ccrc%7CCRC%22%20%7C%20level%20=~%20%22error%7Cwarning%22"
+          runbook_url: "https://your-wiki.com/runbooks/high-network-errors"
+
+      # 数据库连接池耗尽 + 自动日志查询
+      - alert: DatabaseConnectionPoolExhausted
+        expr: |
+          db_connections_active / db_connections_max > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: database
+          component: connection
+          subcategory: logs
+        annotations:
+          summary: "🔴 数据库 {{ $labels.instance }} 连接池耗尽"
+          description: |
+            **数据库**: {{ $labels.instance }}
+            **连接池使用率**: {{ $value | humanizePercentage }}
+
+            **自动日志查询**:
+            ```logql
+            {job="{{ $labels.job }}", instance="{{ $labels.instance }}"} 
+            |~ "connection|Connection|pool|Pool|timeout|Timeout" 
+            | level =~ "error|warning"
+            ```
+
+            **处理步骤**:
+            1. 查看上述日志查询结果
+            2. 检查连接泄漏
+            3. 增加连接池大小或优化查询
+          log_query: '{job="{{ $labels.job }}", instance="{{ $labels.instance }}"} |~ "connection|Connection|pool|Pool|timeout|Timeout" | level =~ "error|warning"'
+          grafana_url: "http://localhost:3000/d/logs-explorer?expr={job=%22{{ $labels.job }}%22,%20instance=%22{{ $labels.instance }}%22}%20%7C~%20%22connection%7CConnection%7Cpool%7CPool%7Ctimeout%7CTimeout%22%20%7C%20level%20=~%20%22error%7Cwarning%22"
+          runbook_url: "https://your-wiki.com/runbooks/connection-pool-exhausted"
+
+      # 应用异常日志激增 + 自动告警
+      - alert: ApplicationErrorSpike
+        expr: |
+          rate(log_lines_total{level="error"}[5m]) 
+          > avg_over_time(rate(log_lines_total{level="error"}[1h])[5m:5m]) * 3
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: application
+          component: logs
+          subcategory: anomaly
+        annotations:
+          summary: "⚠️ 应用 {{ $labels.job }} 错误日志激增"
+          description: |
+            **应用**: {{ $labels.job }}
+            **错误日志速率**: {{ $value }} lines/sec
+            **基准速率**: {{ $value }} lines/sec
+
+            **自动日志查询**:
+            ```logql
+            {job="{{ $labels.job }}", level="error"} 
+            | line_format "{{.timestamp}} {{.message}}"
+            ```
+
+            **处理步骤**:
+            1. 查看上述日志查询结果
+            2. 分析错误模式
+            3. 定位根因并修复
+          log_query: '{job="{{ $labels.job }}", level="error"} | line_format "{{.timestamp}} {{.message}}"'
+          grafana_url: "http://localhost:3000/d/logs-explorer?expr={job=%22{{ $labels.job }}%22,%20level=%22error%22}%20%7C%20line_format%20%22{{.timestamp}}%20{{.message}}%22"
+          runbook_url: "https://your-wiki.com/runbooks/error-spike"
+
+      # 日志模式异常检测
+      - alert: UnusualLogPattern
+        expr: |
+          count_over_time(log_lines_total{job=~".*"}[5m]) 
+          > avg_over_time(count_over_time(log_lines_total{job=~".*"}[5m])[1h:5m]) * 2
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: application
+          component: logs
+          subcategory: anomaly
+        annotations:
+          summary: "⚠️ 应用 {{ $labels.job }} 日志量异常"
+          description: |
+            **应用**: {{ $labels.job }}
+            **当前日志量**: {{ $value }} lines/5m
+            **基准日志量**: {{ $value }} lines/5m
+
+            **自动日志查询**:
+            ```logql
+            {job="{{ $labels.job }}"} 
+            | line_format "{{.timestamp}} {{.level}} {{.message}}"
+            ```
+
+            **处理步骤**:
+            1. 查看上述日志查询结果
+            2. 分析日志模式变化
+            3. 确认是否为正常业务波动
+          log_query: '{job="{{ $labels.job }}"} | line_format "{{.timestamp}} {{.level}} {{.message}}"'
+          grafana_url: "http://localhost:3000/d/logs-explorer?expr={job=%22{{ $labels.job }}%22}%20%7C%20line_format%20%22{{.timestamp}}%20{{.level}}%20{{.message}}%22"
+          runbook_url: "https://your-wiki.com/runbooks/unusual-log-pattern"
+
+# ===================================================================
+# 告警 + 智能降噪告警规则
+# 用途: 基于统计学的告警降噪和聚类
+# ===================================================================
+
+  - name: intelligent-alert-deduplication
+    interval: 30s
+    rules:
+
+      # 告警聚类 - 相似告警合并
+      - alert: AlertClusterDetected
+        expr: |
+          count(ALERTS{alertname=~".*Down|.*Error|.*Failure"}) by (cluster, alertname) > 5
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: alerting
+          component: deduplication
+          subcategory: clustering
+        annotations:
+          summary: "⚠️ 检测到告警聚类 - {{ $labels.alertname }} 在 {{ $labels.cluster }} 集群中触发 {{ $value }} 次"
+          description: |
+            **集群**: {{ $labels.cluster }}
+            **告警名称**: {{ $labels.alertname }}
+            **触发次数**: {{ $value }}
+
+            **聚类信息**:
+            - 可能是系统性问题
+            - 建议优先处理根因
+            - 已自动抑制相似告警
+
+            **处理步骤**:
+            1. 查看告警聚类详情
+            2. 识别共同根因
+            3. 一次性解决所有问题
+          alert_cluster: true
+          cluster_size: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/alert-clustering"
+
+      # 告警风暴检测
+      - alert: AlertStormDetected
+        expr: |
+          rate(ALERTS{}[5m]) > 100
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: alerting
+          component: deduplication
+          subcategory: storm
+        annotations:
+          summary: "🔴 检测到告警风暴 - 每分钟 {{ $value }} 条告警"
+          description: |
+            **告警速率**: {{ $value }} alerts/min
+            **持续时间**: 2 分钟
+
+            **风暴信息**:
+            - 可能是系统性故障
+            - 已启用告警抑制
+            - 只发送关键告警
+
+            **处理步骤**:
+            1. 立即检查监控系统状态
+            2. 识别风暴源头
+            3. 临时降低告警频率
+          alert_storm: true
+          storm_rate: "{{ $value }}"
+          auto_suppression: true
+          runbook_url: "https://your-wiki.com/runbooks/alert-storm"
+
+      # 告警重复检测
+      - alert: AlertDuplicateDetected
+        expr: |
+          count(ALERTS{alertname=~".*", severity="critical"}) by (alertname, instance) > 1
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: alerting
+          component: deduplication
+          subcategory: duplicate
+        annotations:
+          summary: "⚠️ 检测到重复告警 - {{ $labels.alertname }} 在 {{ $labels.instance }} 重复触发"
+          description: |
+            **告警名称**: {{ $labels.alertname }}
+            **实例**: {{ $labels.instance }}
+            **重复次数**: {{ $value }}
+
+            **重复信息**:
+            - 告警未恢复
+            - 已自动去重
+            - 只发送一次通知
+
+            **处理步骤**:
+            1. 检查告警是否已处理
+            2. 确认问题是否已解决
+            3. 手动解决告警
+          alert_duplicate: true
+          duplicate_count: "{{ $value }}"
+          auto_dedup: true
+          runbook_url: "https://your-wiki.com/runbooks/alert-duplicate"
+
+      # 告警频率异常检测
+      - alert: AlertFrequencyAnomaly
+        expr: |
+          abs(rate(ALERTS{}[5m]) - avg_over_time(rate(ALERTS{}[1h])[5m:5m]))
+          / stddev_over_time(rate(ALERTS{}[1h])[5m:5m]) > 3
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: alerting
+          component: deduplication
+          subcategory: anomaly
+        annotations:
+          summary: "⚠️ 检测到告警频率异常 - 当前速率 {{ $value }} 倍标准差"
+          description: |
+            **当前告警速率**: {{ $value }}
+            **基准速率**: {{ $value }}
+            **标准差**: {{ $value }}
+
+            **异常信息**:
+            - 告警频率异常波动
+            - 可能是系统性问题
+            - 建议深入分析
+
+            **处理步骤**:
+            1. 分析告警频率变化
+            2. 识别异常告警
+            3. 优化告警规则
+          alert_anomaly: true
+          anomaly_score: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/alert-frequency-anomaly"
+
+      # 告警优先级自动调整
+      - alert: AlertPriorityAutoAdjusted
+        expr: |
+          count(ALERTS{severity="warning", alertname=~".*Warning.*"}) by (instance) > 10
+        for: 15m
+        labels:
+          severity: warning
+          priority: P2
+          category: alerting
+          component: deduplication
+          subcategory: priority
+        annotations:
+          summary: "⚠️ 实例 {{ $labels.instance }} 告警过多，自动调整告警优先级"
+          description: |
+            **实例**: {{ $labels.instance }}
+            **告警数量**: {{ $value }}
+            **调整策略**: 降低低优先级告警频率
+
+            **调整信息**:
+            - Warning 级别告警过多
+            - 自动降低通知频率
+            - 只发送 Critical 级别告警
+
+            **处理步骤**:
+            1. 检查实例状态
+            2. 优化告警规则
+            3. 解决根因问题
+          priority_adjusted: true
+          adjustment_strategy: reduce_notification_frequency
+          runbook_url: "https://your-wiki.com/runbooks/alert-priority-adjustment"
+
+      # 告警抑制规则触发
+      - alert: AlertSuppressionTriggered
+        expr: |
+          count(ALERTS{suppressed="true"}) > 0
+        for: 1m
+        labels:
+          severity: info
+          priority: P3
+          category: alerting
+          component: deduplication
+          subcategory: suppression
+        annotations:
+          summary: "ℹ️ 告警抑制规则已触发 - {{ $value }} 条告警被抑制"
+          description: |
+            **抑制告警数量**: {{ $value }}
+            **抑制规则**: 自动抑制
+
+            **抑制信息**:
+            - 根因告警已触发
+            - 相关告警被抑制
+            - 减少告警噪音
+
+            **处理步骤**:
+            1. 查看根因告警
+            2. 解决根因问题
+            3. 被抑制告警自动恢复
+          alert_suppressed: true
+          suppressed_count: "{{ $value }}"
+          runbook_url: "https://your-wiki.com/runbooks/alert-suppression"
+
+      # 告警恢复自动确认
+      - alert: AlertAutoResolved
+        expr: |
+          count(ALERTS{alertstate="firing"}) < count(ALERTS{alertstate="firing"} offset 5m)
+        for: 1m
+        labels:
+          severity: info
+          priority: P3
+          category: alerting
+          component: deduplication
+          subcategory: resolution
+        annotations:
+          summary: "ℹ️ 告警自动恢复 - {{ $value }} 条告警已解决"
+          description: |
+            **恢复告警数量**: {{ $value }}
+            **恢复时间**: {{ $value }}
+
+            **恢复信息**:
+            - 告警已自动恢复
+            - 发送恢复通知
+            - 更新告警状态
+
+            **处理步骤**:
+            1. 确认问题已解决
+            2. 验证系统正常运行
+            3. 记录问题处理过程
+          alert_resolved: true
+          resolved_count: "{{ $value }}"
+          auto_confirmation: true
+          runbook_url: "https://your-wiki.com/runbooks/auto-resolution"
 
 groups:
   - name: monitoring-system-alerts

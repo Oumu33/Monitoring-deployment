@@ -1,0 +1,128 @@
+# Redfish 硬件监控配置示例
+# 文件路径: config/vmagent/targets/redfish-servers.json
+
+# ===== 配置说明 =====
+#
+# 1. targets 数组:
+#    - 填写在 config/redfish-exporter/redfish.yml 中配置的服务器名称
+#    - 这些名称必须与 redfish.yml 中的主机名完全一致
+#    - 用于 Redfish Exporter 采集硬件指标
+#
+# 2. labels 标签:
+#    - device_type: 固定为 "server"
+#    - monitoring_method: 固定为 "redfish"
+#    - priority: 告警优先级（critical=紧急/warning=警告）
+#
+# 3. 自动生效:
+#    - 修改此文件后 30 秒自动生效
+#    - 无需重启任何服务
+#
+# 4. 监控指标:
+#    - 温度监控（CPU、内存、硬盘、进风口、出风口）
+#    - 风扇状态和转速
+#    - 电源状态和功耗
+#    - RAID 控制器状态
+#    - 硬盘 SMART 数据和健康状态
+#    - 内存 ECC 错误
+#    - 网络接口状态
+#
+# 5. 预配置服务器列表:
+#    - Dell PowerEdge: R640/R740/R740xd/R750/R750xa/R840/R940/C6420/C6525
+#    - HPE ProLiant: DL360/DL380 Gen10/Gen11/DL385/DL560/BL460c/Synergy
+#    - Supermicro: 6029P/613P/614U/615P/616U
+#    - Lenovo ThinkSystem: SR650/SR630/SR850/SR950/SN550
+#    - Fujitsu: RX2540/RX4770
+#
+# ===== 使用示例 =====
+
+[
+  {
+    "targets": [
+      "dell-r740-01",
+      "dell-r740-02",
+      "hpe-dl380-gen10-01",
+      "supermicro-6029p-01"
+    ],
+    "labels": {
+      "device_type": "server",
+      "monitoring_method": "redfish",
+      "priority": "P0"
+    }
+  }
+]
+
+# ===== 扩展示例 =====
+#
+# 按厂商分组:
+# [
+#   {
+#     "targets": [
+#       "dell-r740-01",
+#       "dell-r740-02",
+#       "dell-r750-01"
+#     ],
+#     "labels": {
+#       "device_type": "server",
+#       "monitoring_method": "redfish",
+#       "vendor": "dell",
+#       "priority": "P0"
+#     }
+#   },
+#   {
+#     "targets": [
+#       "hpe-dl360-gen10-01",
+#       "hpe-dl380-gen10-01"
+#     ],
+#     "labels": {
+#       "device_type": "server",
+#       "monitoring_method": "redfish",
+#       "vendor": "hpe",
+#       "priority": "P0"
+#     }
+#   }
+# ]
+#
+# 按机房分组:
+# [
+#   {
+#     "targets": [
+#       "dell-r740-01",
+#       "hpe-dl380-gen10-01"
+#     ],
+#     "labels": {
+#       "device_type": "server",
+#       "monitoring_method": "redfish",
+#       "location": "datacenter-1",
+#       "priority": "P0"
+#     }
+#   },
+#   {
+#     "targets": [
+#       "dell-r740-02",
+#       "hpe-dl380-gen10-02"
+#     ],
+#     "labels": {
+#       "device_type": "server",
+#       "monitoring_method": "redfish",
+#       "location": "datacenter-2",
+#       "priority": "P0"
+#     }
+#   }
+# ]
+#
+# 包含详细信息:
+# [
+#   {
+#     "targets": ["dell-r740-01"],
+#     "labels": {
+#       "device_type": "server",
+#       "monitoring_method": "redfish",
+#       "vendor": "dell",
+#       "model": "PowerEdge R740",
+#       "location": "datacenter-1-rack-A01",
+#       "rack": "A01",
+#       "owner": "server-team@company.com",
+#       "priority": "P0"
+#     }
+#   }
+# ]

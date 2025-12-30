@@ -298,3 +298,451 @@ groups:
         annotations:
           summary: "交换机堆叠成员 {{ $labels.cswSwitchIndex }} 离线"
           description: "堆叠交换机 {{ $labels.instance }} 的成员 {{ $labels.cswSwitchIndex }} 状态异常"
+
+# ===================================================================
+# 网络设备联动监控告警规则
+# 用途: 网络设备与其他系统深度联动
+# ===================================================================
+
+  - name: network-device-linkage-alerts
+    interval: 30s
+    rules:
+
+      # 交换机宕机 + 自动日志查询
+      - alert: SwitchDownWithLogs
+        expr: up{job="snmp-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: network
+          component: switch
+          subcategory: logs
+        annotations:
+          summary: "🔴 交换机 {{ $labels.instance }} 宕机"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **厂商**: {{ $labels.vendor }}
+            **型号**: {{ $labels.model }}
+
+            **自动日志查询**:
+            ```logql
+            {host="{{ $labels.instance }}"} 
+            |~ "switch|Switch|down|Down|error|Error" 
+            | level =~ "error|warning"
+            ```
+
+            **影响范围**:
+            - 连接的服务器: {{ $labels.connected_servers }}
+            - 连接的交换机: {{ $labels.connected_switches }}
+
+            **处理步骤**:
+            1. 查看上述日志查询结果
+            2. 查看拓扑图确认影响范围
+            3. 联系网络团队排查
+          log_query: '{host="{{ $labels.instance }}"} |~ "switch|Switch|down|Down|error|Error" | level =~ "error|warning"'
+          grafana_url: "http://localhost:3000/d/logs-explorer?expr={host=%22{{ $labels.instance }}%22}%20%7C~%20%22switch%7CSwitch%7Cdown%7CDown%7Cerror%7CError%22%20%7C%20level%20=~%20%22error%7Cwarning%22"
+          runbook_url: "https://your-wiki.com/runbooks/switch-down"
+
+      # 交换机端口下线 + 自动排查连接设备
+      - alert: SwitchPortDownAutoInvestigate
+        expr: ifOperStatus == 2
+        for: 3m
+        labels:
+          severity: critical
+          priority: P0
+          category: network
+          component: switch
+          subcategory: port
+        annotations:
+          summary: "🔴 交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 下线"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **端口**: {{ $labels.ifDescr }}
+            **描述**: {{ $labels.ifAlias }}
+
+            **连接设备**:
+            - 设备名称: {{ $labels.connected_device }}
+            - 设备类型: {{ $labels.connected_device_type }}
+            - 设备 IP: {{ $labels.connected_device_ip }}
+
+            **自动排查**:
+            - Ping 连接设备
+            - 检查设备状态
+            - 查看设备日志
+
+            **处理步骤**:
+            1. 检查连接设备状态
+            2. 检查网线/光纤
+            3. 检查端口配置
+          auto_investigate: true
+          connected_device: "{{ $labels.connected_device }}"
+          connected_device_type: "{{ $labels.connected_device_type }}"
+          runbook_url: "https://your-wiki.com/runbooks/switch-port-down"
+
+      # 交换机 CPU 过高 + 自动流量分析
+      - alert: SwitchHighCPUAutoAnalyze
+        expr: hrProcessorLoad > 80
+        for: 10m
+        labels:
+          severity: warning
+          priority: P1
+          category: network
+          component: switch
+          subcategory: performance
+        annotations:
+          summary: "⚠️ 交换机 {{ $labels.instance }} CPU 使用率过高，已自动分析流量"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **CPU 使用率**: {{ $value }}%
+
+            **流量分析**:
+            - 高流量端口: {{ $labels.high_traffic_ports }}
+            - 异常流量: {{ $labels.anomalous_traffic }}
+            - 广播风暴: {{ $labels.broadcast_storm }}
+
+            **处理步骤**:
+            1. 查看流量分析结果
+            2. 识别高流量源
+            3. 优化流量或升级设备
+          auto_analyze: true
+          analysis_type: traffic_analysis
+          runbook_url: "https://your-wiki.com/runbooks/switch-high-cpu"
+
+      # 交换机端口错误率过高 + 自动诊断
+      - alert: SwitchPortErrorAutoDiagnose
+        expr: |
+          (rate(ifInErrors[5m]) + rate(ifOutErrors[5m])) > 100
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: network
+          component: switch
+          subcategory: port
+        annotations:
+          summary: "⚠️ 交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 错误率过高，已自动诊断"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **端口**: {{ $labels.ifDescr }}
+            **错误速率**: {{ $value }} errors/sec
+
+            **自动诊断**:
+            - 错误类型: {{ $labels.error_type }}
+            - 可能原因: {{ $labels.possible_cause }}
+            - 建议操作: {{ $labels.recommended_action }}
+
+            **处理步骤**:
+            1. 查看诊断结果
+            2. 检查网线/光纤
+            3. 更换端口或设备
+          auto_diagnose: true
+          error_type: "{{ $labels.error_type }}"
+          runbook_url: "https://your-wiki.com/runbooks/switch-port-errors"
+
+      # STP 拓扑变化 + 自动环路检测
+      - alert: SwitchSTPChangeAutoDetectLoop
+        expr: rate(dot1dStpTopChanges[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: network
+          component: switch
+          subcategory: stp
+        annotations:
+          summary: "⚠️ 交换机 {{ $labels.instance }} STP 拓扑变化频繁，已自动检测环路"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **STP 变化速率**: {{ $value }} changes/min
+
+            **环路检测**:
+            - 检测到环路: {{ $labels.loop_detected }}
+            - 环路路径: {{ $labels.loop_path }}
+            - 建议操作: {{ $labels.recommended_action }}
+
+            **处理步骤**:
+            1. 查看环路检测结果
+            2. 断开环路端口
+            3. 优化网络拓扑
+          auto_detect: true
+          detection_type: loop_detection
+          runbook_url: "https://your-wiki.com/runbooks/switch-stp-loop"
+
+      # 交换机配置变更 + 自动备份
+      - alert: SwitchConfigChangeAutoBackup
+        expr: ccmHistoryRunningLastChanged != ccmHistoryRunningLastSaved
+        for: 30m
+        labels:
+          severity: info
+          priority: P3
+          category: network
+          component: switch
+          subcategory: config
+        annotations:
+          summary: "ℹ️ 交换机 {{ $labels.instance }} 配置已变更，已自动备份"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **变更时间**: {{ $value }}
+
+            **自动备份**:
+            - 备份位置: /backup/switch-configs/
+            - 备份文件: {{ $labels.backup_file }}
+            - 备份时间: {{ $value }}
+
+            **处理步骤**:
+            1. 确认配置变更
+            2. 保存配置到启动配置
+            3. 验证配置正确性
+          auto_backup: true
+          backup_location: "/backup/switch-configs/"
+          backup_file: "{{ $labels.backup_file }}"
+          runbook_url: "https://your-wiki.com/runbooks/switch-config-backup"
+
+      # 交换机端口安全违规 + 自动封禁
+      - alert: SwitchPortSecurityViolationAutoBlock
+        expr: increase(cpsIfPortSecurityViolations[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          priority: P1
+          category: network
+          component: switch
+          subcategory: security
+        annotations:
+          summary: "⚠️ 交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 检测到安全违规，已自动封禁"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **端口**: {{ $labels.ifDescr }}
+            **违规次数**: {{ $value }}
+
+            **自动封禁**:
+            - 封禁 MAC: {{ $labels.violating_mac }}
+            - 封禁时长: 1 小时
+            - 封禁时间: {{ $value }}
+
+            **处理步骤**:
+            1. 确认封禁已执行
+            2. 检查违规原因
+            3. 联系安全团队
+          auto_block: true
+          block_action: shutdown_port
+          violating_mac: "{{ $labels.violating_mac }}"
+          runbook_url: "https://your-wiki.com/runbooks/switch-port-security"
+
+      # 交换机温度过高 + 自动降频
+      - alert: SwitchHighTemperatureAutoThrottle
+        expr: ciscoEnvMonTemperatureStatusValue > 65
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: network
+          component: switch
+          subcategory: thermal
+        annotations:
+          summary: "⚠️ 交换机 {{ $labels.instance }} 温度过高，已自动降频"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **温度**: {{ $value }}°C
+            **传感器**: {{ $labels.ciscoEnvMonTemperatureStatusDescr }}
+
+            **自动降频**:
+            - 降频策略: 降低 CPU 频率
+            - 降频幅度: 20%
+            - 降频时间: {{ $value }}
+
+            **处理步骤**:
+            1. 检查风扇状态
+            2. 检查机房温度
+            3. 考虑增加散热
+          auto_throttle: true
+          throttle_action: reduce_cpu_frequency
+          runbook_url: "https://your-wiki.com/runbooks/switch-high-temperature"
+
+      # 交换机端口带宽利用率过高 + 自动 QoS 调整
+      - alert: SwitchPortBandwidthHighAutoQoS
+        expr: |
+          (rate(ifHCInOctets[5m]) * 8 / ifHighSpeed) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: network
+          component: switch
+          subcategory: qos
+        annotations:
+          summary: "⚠️ 交换机 {{ $labels.instance }} 端口 {{ $labels.ifDescr }} 带宽利用率过高，已自动调整 QoS"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **端口**: {{ $labels.ifDescr }}
+            **带宽利用率**: {{ $value | humanizePercentage }}
+
+            **自动 QoS 调整**:
+            - 调整策略: 优先保证关键流量
+            - QoS 策略: {{ $labels.qos_policy }}
+            - 调整时间: {{ $value }}
+
+            **处理步骤**:
+            1. 查看流量分析
+            2. 优化 QoS 策略
+            3. 考虑扩容带宽
+          auto_qos: true
+          qos_action: prioritize_critical_traffic
+          runbook_url: "https://your-wiki.com/runbooks/switch-bandwidth-qos"
+
+      # 交换机堆叠成员离线 + 自动重新选举
+      - alert: SwitchStackMemberDownAutoReelect
+        expr: cswSwitchState != 3
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: network
+          component: switch
+          subcategory: stack
+        annotations:
+          summary: "🔴 交换机堆叠成员 {{ $labels.cswSwitchIndex }} 离线，已自动重新选举主控"
+          description: |
+            **堆叠交换机**: {{ $labels.instance }}
+            **成员**: {{ $labels.cswSwitchIndex }}
+            **状态**: {{ $value }}
+
+            **自动重新选举**:
+            - 新主控: {{ $labels.new_master }}
+            - 选举时间: {{ $value }}
+            - 影响范围: {{ $labels.impact_scope }}
+
+            **处理步骤**:
+            1. 确认选举完成
+            2. 检查离线成员
+            3. 修复或更换成员
+          auto_reelect: true
+          reelect_action: elect_new_master
+          new_master: "{{ $labels.new_master }}"
+          runbook_url: "https://your-wiki.com/runbooks/switch-stack-reelect"
+
+      # 交换机 PoE 端口过载 + 自动断电
+      - alert: SwitchPOEOverloadAutoShutdown
+        expr: |
+          pethPsePortPower > pethPsePortPowerLimit * 0.95
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: network
+          component: switch
+          subcategory: poe
+        annotations:
+          summary: "⚠️ 交换机 {{ $labels.instance }} PoE 端口 {{ $labels.pethPsePortIndex }} 过载，已自动断电"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **端口**: {{ $labels.pethPsePortIndex }}
+            **当前功率**: {{ $value }}W
+            **功率限制**: {{ $labels.pethPsePortPowerLimit }}W
+
+            **自动断电**:
+            - 断电端口: {{ $labels.pethPsePortIndex }}
+            - 断电时间: {{ $value }}
+            - 保护措施: 防止设备损坏
+
+            **处理步骤**:
+            1. 确认断电已执行
+            2. 检查连接设备
+            3. 考虑升级 PoE 供电
+          auto_shutdown: true
+          shutdown_action: disable_poe_port
+          runbook_url: "https://your-wiki.com/runbooks/switch-poe-overload"
+
+      # 交换机 BGP 会话中断 + 自动重连
+      - alert: SwitchBGPDownAutoReconnect
+        expr: bgpPeerState != 6
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: network
+          component: switch
+          subcategory: bgp
+        annotations:
+          summary: "🔴 交换机 {{ $labels.instance }} BGP 会话 {{ $labels.bgpPeerRemoteAddr }} 中断，已自动重连"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **BGP 对端**: {{ $labels.bgpPeerRemoteAddr }}
+            **AS 号**: {{ $labels.bgpPeerRemoteAs }}
+
+            **自动重连**:
+            - 重连尝试: {{ $labels.reconnect_attempts }}
+            - 重连间隔: 30 秒
+            - 重连时间: {{ $value }}
+
+            **处理步骤**:
+            1. 确认重连状态
+            2. 检查 BGP 配置
+            3. 检查网络连通性
+          auto_reconnect: true
+          reconnect_action: bgp_reconnect
+          reconnect_attempts: "{{ $labels.reconnect_attempts }}"
+          runbook_url: "https://your-wiki.com/runbooks/switch-bgp-reconnect"
+
+      # 交换机 OSPF 邻居丢失 + 自动重新计算
+      - alert: SwitchOSPFNeighborLostAutoRecalculate
+        expr: ospfNeighborState != 8
+        for: 2m
+        labels:
+          severity: warning
+          priority: P1
+          category: network
+          component: switch
+          subcategory: ospf
+        annotations:
+          summary: "⚠️ 交换机 {{ $labels.instance }} OSPF 邻居 {{ $labels.ospfNeighborIp }} 丢失，已自动重新计算路由"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **OSPF 邻居**: {{ $labels.ospfNeighborIp }}
+            **区域**: {{ $labels.ospfNeighborArea }}
+
+            **自动重新计算**:
+            - 重新计算时间: {{ $value }}
+            - 新路由数量: {{ $labels.new_routes }}
+            - 影响范围: {{ $labels.impact_scope }}
+
+            **处理步骤**:
+            1. 确认路由已更新
+            2. 检查邻居状态
+            3. 验证网络连通性
+          auto_recalculate: true
+          recalculate_action: ospf_recalculate
+          new_routes: "{{ $labels.new_routes }}"
+          runbook_url: "https://your-wiki.com/runbooks/switch-ospf-recalculate"
+
+      # 交换机 ARP 表异常 + 自动清理
+      - alert: SwitchARPTableAnomalyAutoClean
+        expr: |
+          count(ipNetToMediaPhysAddress) by (instance) > 10000
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          category: network
+          component: switch
+          subcategory: arp
+        annotations:
+          summary: "⚠️ 交换机 {{ $labels.instance }} ARP 表异常，已自动清理"
+          description: |
+            **交换机**: {{ $labels.instance }}
+            **ARP 条目数**: {{ $value }}
+
+            **自动清理**:
+            - 清理策略: 清理过期条目
+            - 清理数量: {{ $labels.cleaned_entries }}
+            - 清理时间: {{ $value }}
+
+            **处理步骤**:
+            1. 确认清理完成
+            2. 检查网络配置
+            3. 考虑增加 ARP 表容量
+          auto_clean: true
+          clean_action: clear_expired_arp_entries
+          cleaned_entries: "{{ $labels.cleaned_entries }}"
+          runbook_url: "https://your-wiki.com/runbooks/switch-arp-clean"

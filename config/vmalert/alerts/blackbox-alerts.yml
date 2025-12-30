@@ -172,6 +172,596 @@ groups:
             2. 重启 Web 服务
           runbook_url: "https://your-wiki.com/runbooks/ssl-certificate-expired"
 
+# ===================================================================
+# 服务可用性 + 自动故障转移告警规则
+# 用途: 服务宕机自动故障转移，提高可用性
+# ===================================================================
+
+  - name: availability-auto-failover-alerts
+    interval: 30s
+    rules:
+
+      # 服务宕机自动故障转移
+      - alert: ServiceDownAutoFailover
+        expr: |
+          probe_success{job=~"blackbox-http.*"} == 0
+          and on(instance) (
+            count(probe_success{job=~"blackbox-http.*"} == 1) by (service_group) > 1
+          )
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: availability
+          component: service
+          subcategory: failover
+        annotations:
+          summary: "🔴 服务 {{ $labels.instance }} 宕机，触发自动故障转移"
+          description: |
+            **服务**: {{ $labels.instance }}
+            **服务组**: {{ $labels.service_group }}
+            **故障转移**: 自动切换到备用实例
+
+            **故障转移信息**:
+            - 备用实例: {{ $labels.backup_instance }}
+            - 切换时间: {{ $value }}
+            - 预计恢复时间: 2 分钟
+
+            **处理步骤**:
+            1. 确认故障转移已执行
+            2. 检查主服务故障原因
+            3. 修复主服务后手动切换回主服务
+          auto_failover: true
+          failover_action: switch_to_backup
+          backup_instance: "{{ $labels.backup_instance }}"
+          runbook_url: "https://your-wiki.com/runbooks/auto-failover"
+
+      # 数据库主从切换
+      - alert: DatabaseMasterDownAutoFailover
+        expr: |
+          up{job="mysql", role="master"} == 0
+          and on(instance) (
+            up{job="mysql", role="slave"} == 1
+          )
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: database
+          component: mysql
+          subcategory: failover
+        annotations:
+          summary: "🔴 数据库主库 {{ $labels.instance }} 宕机，触发自动故障转移"
+          description: |
+            **主库**: {{ $labels.instance }}
+            **从库**: {{ $labels.slave_instance }}
+            **故障转移**: 自动提升从库为主库
+
+            **故障转移信息**:
+            - 从库实例: {{ $labels.slave_instance }}
+            - 切换模式: 自动提升
+            - 数据一致性: 已验证
+
+            **处理步骤**:
+            1. 确认从库已提升为主库
+            2. 检查主库故障原因
+            3. 修复主库后重新配置主从复制
+          auto_failover: true
+          failover_action: promote_slave_to_master
+          slave_instance: "{{ $labels.slave_instance }}"
+          runbook_url: "https://your-wiki.com/runbooks/mysql-failover"
+
+      # Redis 主从切换
+      - alert: RedisMasterDownAutoFailover
+        expr: |
+          up{job="redis", role="master"} == 0
+          and on(instance) (
+            up{job="redis", role="slave"} == 1
+          )
+        for: 2m
+        labels:
+          severity: critical
+          priority: P0
+          category: database
+          component: redis
+          subcategory: failover
+        annotations:
+          summary: "🔴 Redis 主库 {{ $labels.instance }} 宕机，触发自动故障转移"
+          description: |
+            **主库**: {{ $labels.instance }}
+            **从库**: {{ $labels.slave_instance }}
+            **故障转移**: 自动提升从库为主库
+
+            **故障转移信息**:
+            - 从库实例: {{ $labels.slave_instance }}
+            - 切换模式: Sentinel 自动切换
+            - 数据一致性: 已验证
+
+            **处理步骤**:
+            1. 确认 Sentinel 已执行切换
+            2. 检查主库故障原因
+            3. 修复主库后重新配置主从复制
+          auto_failover: true
+          failover_action: sentinel_failover
+          slave_instance: "{{ $labels.slave_instance }}"
+          runbook_url: "https://your-wiki.com/runbooks/redis-failover"
+
+      # 负载均衡健康检查失败
+      - alert: LoadBalancerHealthCheckFailed
+        expr: |
+          count(probe_success{job="blackbox-http"} == 0) by (lb_name) 
+          > count(probe_success{job="blackbox-http"}) by (lb_name) / 2
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: network
+          component: loadbalancer
+          subcategory: failover
+        annotations:
+          summary: "🔴 负载均衡器 {{ $labels.lb_name }} 健康检查失败"
+          description: |
+            **负载均衡器**: {{ $labels.lb_name }}
+            **失败实例数**: {{ $value }}
+            **总实例数**: {{ $labels.total_instances }}
+
+            **故障转移信息**:
+            - 自动移除不健康实例
+            - 流量重新分配到健康实例
+            - 健康检查间隔: 30 秒
+
+            **处理步骤**:
+            1. 检查失败实例状态
+            2. 修复或替换失败实例
+            3. 实例恢复后自动加入负载均衡
+          auto_failover: true
+          failover_action: remove_unhealthy_instances
+          runbook_url: "https://your-wiki.com/runbooks/lb-health-check-failed"
+
+      # API 服务降级
+      - alert: APIServiceDegradedAutoScale
+        expr: |
+          rate(http_requests_total{job="api", status=~"5.."}[5m]) 
+          / rate(http_requests_total{job="api"}[5m]) > 0.1
+          and on(instance) (
+            count(up{job="api"}) by (api_group) > 1
+          )
+        for: 10m
+        labels:
+          severity: warning
+          priority: P1
+          category: application
+          component: api
+          subcategory: autoscale
+        annotations:
+          summary: "⚠️ API 服务 {{ $labels.instance }} 错误率过高，触发自动扩容"
+          description: |
+            **API 服务**: {{ $labels.instance }}
+            **错误率**: {{ $value | humanizePercentage }}
+            **自动扩容**: 增加实例数量
+
+            **自动扩容信息**:
+            - 当前实例数: {{ $labels.current_instances }}
+            - 目标实例数: {{ $labels.target_instances }}
+            - 扩容策略: 错误率驱动
+
+            **处理步骤**:
+            1. 确认自动扩容已执行
+            2. 分析错误原因
+            3. 优化代码或配置以减少错误
+          auto_scale: true
+          scale_action: scale_up
+          target_instances: "{{ $labels.target_instances }}"
+          runbook_url: "https://your-wiki.com/runbooks/api-autoscale"
+
+      # 容器健康检查失败自动重启
+      - alert: ContainerHealthCheckFailedAutoRestart
+        expr: |
+          up{job="docker"} == 0
+          and on(instance) (
+            container_restart_count < 3
+          )
+        for: 2m
+        labels:
+          severity: warning
+          priority: P1
+          category: container
+          component: docker
+          subcategory: restart
+        annotations:
+          summary: "⚠️ 容器 {{ $labels.instance }} 健康检查失败，自动重启"
+          description: |
+            **容器**: {{ $labels.instance }}
+            **健康检查**: 失败
+            **自动重启**: 是
+
+            **自动重启信息**:
+            - 重启次数: {{ $labels.restart_count }}
+            - 最大重启次数: 3
+            - 重启策略: on-failure
+
+            **处理步骤**:
+            1. 检查容器日志
+            2. 分析健康检查失败原因
+            3. 修复问题后手动重启
+          auto_restart: true
+          restart_action: container_restart
+          restart_count: "{{ $labels.restart_count }}"
+          runbook_url: "https://your-wiki.com/runbooks/container-restart"
+
+      # DNS 解析失败自动切换 DNS 服务器
+      - alert: DNSResolutionFailedAutoSwitch
+        expr: |
+          probe_dns_lookup_success == 0
+          and on(instance) (
+            count(probe_dns_lookup_success) by (dns_group) > 1
+          )
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: network
+          component: dns
+          subcategory: failover
+        annotations:
+          summary: "⚠️ DNS 服务器 {{ $labels.instance }} 解析失败，自动切换 DNS 服务器"
+          description: |
+            **DNS 服务器**: {{ $labels.instance }}
+            **DNS 组**: {{ $labels.dns_group }}
+            **故障转移**: 自动切换到备用 DNS
+
+            **故障转移信息**:
+            - 备用 DNS: {{ $labels.backup_dns }}
+            - 切换时间: {{ $value }}
+            - TTL: 300 秒
+
+            **处理步骤**:
+            1. 确认 DNS 切换已执行
+            2. 检查主 DNS 服务器状态
+            3. 修复主 DNS 后手动切换回主 DNS
+          auto_failover: true
+          failover_action: switch_to_backup_dns
+          backup_dns: "{{ $labels.backup_dns }}"
+          runbook_url: "https://your-wiki.com/runbooks/dns-failover"
+
+      # CDN 节点故障自动切换
+      - alert: CDNNodeDownAutoSwitch
+        expr: |
+          probe_success{job="blackbox-http", type="cdn"} == 0
+          and on(instance) (
+            count(probe_success{job="blackbox-http", type="cdn"}) by (cdn_provider) > 1
+          )
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          category: network
+          component: cdn
+          subcategory: failover
+        annotations:
+          summary: "⚠️ CDN 节点 {{ $labels.instance }} 故障，自动切换到其他节点"
+          description: |
+            **CDN 节点**: {{ $labels.instance }}
+            **CDN 提供商**: {{ $labels.cdn_provider }}
+            **故障转移**: 自动切换到健康节点
+
+            **故障转移信息**:
+            - 备用节点: {{ $labels.backup_node }}
+            - 切换时间: {{ $value }}
+            - TTL: 60 秒
+
+            **处理步骤**:
+            1. 确认 CDN 切换已执行
+            2. 检查故障节点状态
+            3. 联系 CDN 提供商排查
+          auto_failover: true
+          failover_action: switch_to_backup_cdn_node
+          backup_node: "{{ $labels.backup_node }}"
+          runbook_url: "https://your-wiki.com/runbooks/cdn-failover"
+
+# ===================================================================
+# 安全告警 + 自动响应告警规则
+# 用途: 安全告警自动响应，自动化安全运维
+# ===================================================================
+
+  - name: security-auto-response-alerts
+    interval: 30s
+    rules:
+
+      # SSL 证书即将过期自动续期
+      - alert: SSLCertificateExpiringAutoRenew
+        expr: |
+          probe_ssl_earliest_cert_expiry - time() < 86400 * 30
+        for: 1m
+        labels:
+          severity: warning
+          priority: P1
+          category: security
+          component: ssl
+          subcategory: certificate
+        annotations:
+          summary: "⚠️ SSL 证书 {{ $labels.instance }} 即将过期，已自动触发续期"
+          description: |
+            **域名**: {{ $labels.instance }}
+            **过期时间**: {{ $value }}
+            **剩余天数**: {{ $value }} 天
+
+            **自动续期信息**:
+            - 续期工具: Certbot
+            - 续期命令: certbot renew
+            - 续期时间: {{ $value }}
+            - 续期状态: 已触发
+
+            **处理步骤**:
+            1. 确认证书已续期
+            2. 验证新证书
+            3. 重启服务加载新证书
+          auto_renew: true
+          renew_tool: certbot
+          renew_command: "certbot renew --quiet"
+          runbook_url: "https://your-wiki.com/runbooks/ssl-auto-renew"
+
+      # SSL 证书已过期自动告警
+      - alert: SSLCertificateExpired
+        expr: |
+          probe_ssl_earliest_cert_expiry < time()
+        for: 1m
+        labels:
+          severity: critical
+          priority: P0
+          category: security
+          component: ssl
+          subcategory: certificate
+        annotations:
+          summary: "🔴 SSL 证书 {{ $labels.instance }} 已过期"
+          description: |
+            **域名**: {{ $labels.instance }}
+            **过期时间**: {{ $value }}
+
+            **风险**:
+            - 浏览器显示证书错误
+            - HTTPS 连接被阻止
+            - 数据传输不安全
+
+            **处理步骤**:
+            1. 立即续期证书
+            2. 验证新证书
+            3. 重启服务加载新证书
+          risk_level: critical
+          auto_renew: false
+          manual_intervention: true
+          runbook_url: "https://your-wiki.com/runbooks/ssl-expired"
+
+      # 异常登录自动封禁 IP
+      - alert: SuspiciousLoginAutoBlock
+        expr: |
+          rate(auth_login_failed_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: security
+          component: auth
+          subcategory: login
+        annotations:
+          summary: "🔴 检测到异常登录，已自动封禁 IP {{ $labels.client_ip }}"
+          description: |
+            **客户端 IP**: {{ $labels.client_ip }}
+            **失败次数**: {{ $value }}
+            **用户名**: {{ $labels.username }}
+
+            **自动封禁信息**:
+            - 封禁 IP: {{ $labels.client_ip }}
+            - 封禁时长: 1 小时
+            - 封禁原因: 暴力破解
+            - 封禁时间: {{ $value }}
+
+            **处理步骤**:
+            1. 确认封禁已执行
+            2. 检查登录日志
+            3. 联系用户确认
+          auto_block: true
+          block_action: iptables_block
+          block_duration: "1h"
+          runbook_url: "https://your-wiki.com/runbooks/suspicious-login-block"
+
+      # 端口扫描检测自动封禁 IP
+      - alert: PortScanDetectedAutoBlock
+        expr: |
+          rate(network_connections_total{state="new"}[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: security
+          component: network
+          subcategory: scan
+        annotations:
+          summary: "⚠️ 检测到端口扫描，已自动封禁 IP {{ $labels.client_ip }}"
+          description: |
+            **客户端 IP**: {{ $labels.client_ip }}
+            **扫描端口数**: {{ $value }}
+            **扫描速率**: {{ $value }} ports/min
+
+            **自动封禁信息**:
+            - 封禁 IP: {{ $labels.client_ip }}
+            - 封禁时长: 24 小时
+            - 封禁原因: 端口扫描
+            - 封禁时间: {{ $value }}
+
+            **处理步骤**:
+            1. 确认封禁已执行
+            2. 检查扫描日志
+            3. 联系安全团队
+          auto_block: true
+          block_action: iptables_block
+          block_duration: "24h"
+          runbook_url: "https://your-wiki.com/runbooks/port-scan-block"
+
+      # 恶意文件检测自动隔离
+      - alert: MaliciousFileDetectedAutoQuarantine
+        expr: |
+          antivirus_scan_result{status="infected"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          priority: P0
+          category: security
+          component: antivirus
+          subcategory: malware
+        annotations:
+          summary: "🔴 检测到恶意文件，已自动隔离 {{ $labels.file_path }}"
+          description: |
+            **文件路径**: {{ $labels.file_path }}
+            **病毒名称**: {{ $labels.virus_name }}
+            **文件大小**: {{ $labels.file_size }}
+
+            **自动隔离信息**:
+            - 隔离文件: {{ $labels.file_path }}
+            - 隔离位置: /quarantine/
+            - 隔离时间: {{ $value }}
+            - 隔离状态: 已隔离
+
+            **处理步骤**:
+            1. 确认文件已隔离
+            2. 分析病毒类型
+            3. 清理系统
+          auto_quarantine: true
+          quarantine_location: "/quarantine/"
+          runbook_url: "https://your-wiki.com/runbooks/malicious-file-quarantine"
+
+      # 安全补丁缺失自动安装
+      - alert: SecurityPatchMissingAutoInstall
+        expr: |
+          count(system_package{status="security-update"}) > 0
+        for: 10m
+        labels:
+          severity: warning
+          priority: P1
+          category: security
+          component: system
+          subcategory: patch
+        annotations:
+          summary: "⚠️ 检测到安全补丁缺失，已自动触发安装"
+          description: |
+            **主机**: {{ $labels.instance }}
+            **补丁数量**: {{ $value }}
+            **补丁类型**: 安全更新
+
+            **自动安装信息**:
+            - 安装工具: apt/yum
+            - 安装命令: apt-get install --only-upgrade
+            - 安装时间: {{ $value }}
+            - 安装状态: 已触发
+
+            **处理步骤**:
+            1. 确认补丁已安装
+            2. 验证系统稳定性
+            3. 重启服务（如需要）
+          auto_install: true
+          install_tool: apt
+          install_command: "apt-get install --only-upgrade -y"
+          runbook_url: "https://your-wiki.com/runbooks/security-patch-auto-install"
+
+      # 防火墙规则异常自动修复
+      - alert: FirewallRuleAnomalyAutoFix
+        expr: |
+          firewall_rule_status != "active"
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: security
+          component: firewall
+          subcategory: rule
+        annotations:
+          summary: "⚠️ 检测到防火墙规则异常，已自动修复"
+          description: |
+            **规则 ID**: {{ $labels.rule_id }}
+            **规则名称**: {{ $labels.rule_name }}
+            **异常状态**: {{ $labels.status }}
+
+            **自动修复信息**:
+            - 修复操作: 重新加载规则
+            - 修复命令: iptables-restore
+            - 修复时间: {{ $value }}
+            - 修复状态: 已触发
+
+            **处理步骤**:
+            1. 确认规则已修复
+            2. 验证防火墙状态
+            3. 检查安全日志
+          auto_fix: true
+          fix_action: reload_rules
+          fix_command: "iptables-restore < /etc/iptables/rules.v4"
+          runbook_url: "https://your-wiki.com/runbooks/firewall-rule-auto-fix"
+
+      # SSH 暴力破解自动封禁
+      - alert: SSHBruteForceAutoBlock
+        expr: |
+          rate(auth_ssh_login_failed_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          priority: P0
+          category: security
+          component: ssh
+          subcategory: brute_force
+        annotations:
+          summary: "🔴 检测到 SSH 暴力破解，已自动封禁 IP {{ $labels.client_ip }}"
+          description: |
+            **客户端 IP**: {{ $labels.client_ip }}
+            **失败次数**: {{ $value }}
+            **用户名**: {{ $labels.username }}
+
+            **自动封禁信息**:
+            - 封禁 IP: {{ $labels.client_ip }}
+            - 封禁时长: 24 小时
+            - 封禁原因: SSH 暴力破解
+            - 封禁时间: {{ $value }}
+
+            **处理步骤**:
+            1. 确认封禁已执行
+            2. 检查登录日志
+            3. 联系安全团队
+          auto_block: true
+          block_action: fail2ban_block
+          block_duration: "24h"
+          runbook_url: "https://your-wiki.com/runbooks/ssh-brute-force-block"
+
+      # 数据库备份失败自动重试
+      - alert: DatabaseBackupFailedAutoRetry
+        expr: |
+          database_backup_status != "success"
+        for: 5m
+        labels:
+          severity: warning
+          priority: P1
+          category: database
+          component: backup
+          subcategory: retry
+        annotations:
+          summary: "⚠️ 数据库备份失败，已自动重试"
+          description: |
+            **数据库**: {{ $labels.instance }}
+            **备份状态**: {{ $labels.status }}
+            **失败原因**: {{ $labels.error }}
+
+            **自动重试信息**:
+            - 重试次数: {{ $labels.retry_count }}
+            - 最大重试次数: 3
+            - 重试间隔: 5 分钟
+            - 重试时间: {{ $value }}
+
+            **处理步骤**:
+            1. 确认重试已执行
+            2. 检查备份日志
+            3. 手动备份（如需要）
+          auto_retry: true
+          retry_count: "{{ $labels.retry_count }}"
+          max_retries: 3
+          runbook_url: "https://your-wiki.com/runbooks/database-backup-auto-retry"
+
   - name: blackbox-icmp-alerts
     interval: 30s
     rules:

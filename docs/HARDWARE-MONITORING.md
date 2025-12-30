@@ -94,6 +94,83 @@ curl -k -u Administrator:password https://192.168.1.110/redfish/v1/
 - **Lenovo**: XClarity Controller（ThinkSystem 系列）
 - **Cisco**: CIMC（UCS C 系列）
 
+### 📦 预配置服务器列表
+
+本平台已预配置主流服务器的硬件监控模板，新服务器部署时只需修改密码和 IP 即可：
+
+#### Dell PowerEdge（14代及以后）
+| 型号 | 说明 | 配置名称 |
+|------|------|---------|
+| R740 | 2U 双路服务器 | `dell-r740-01`, `dell-r740-02` |
+| R740xd | 2U 大容量存储 | `dell-r740xd-01` |
+| R640 | 1U 双路服务器 | `dell-r640-01` |
+| R750 | 2U 双路服务器 | `dell-r750-01` |
+| R750xa | 2U GPU 服务器 | `dell-r750xa-01` |
+| R840 | 2U 四路服务器 | `dell-r840-01` |
+| R940 | 4U 四路服务器 | `dell-r940-01` |
+| C6420 | 2U 多节点服务器 | `dell-c6420-01` |
+| C6525 | 2U 多节点服务器 | `dell-c6525-01` |
+
+**默认凭据**: `root / calvin`
+
+#### HPE ProLiant（Gen9 及以后）
+| 型号 | 说明 | 配置名称 |
+|------|------|---------|
+| DL360 Gen10 | 1U 双路服务器 | `hpe-dl360-gen10-01`, `hpe-dl360-gen10-02` |
+| DL380 Gen10 | 2U 双路服务器 | `hpe-dl380-gen10-01`, `hpe-dl380-gen10-02` |
+| DL360 Gen11 | 1U 双路服务器 | `hpe-dl360-gen11-01` |
+| DL380 Gen11 | 2U 双路服务器 | `hpe-dl380-gen11-01` |
+| DL385 Gen10 | 2U AMD 服务器 | `hpe-dl385-gen10-01` |
+| DL560 Gen10 | 4U 四路服务器 | `hpe-dl560-gen10-01` |
+| BL460c Gen10 | 刀片服务器 | `hpe-bl460c-gen10-01` |
+| Synergy 480 | Synergy 刀片 | `hpe-synergy-480-gen10-01` |
+
+**默认凭据**: `Administrator / password`
+
+#### Supermicro 服务器
+| 型号 | 说明 | 配置名称 |
+|------|------|---------|
+| 6029P-TRT | 2U 双路服务器 | `supermicro-6029p-01`, `supermicro-6029p-02` |
+| 613P-TN12P | 1U 双路服务器 | `supermicro-613-01` |
+| 614U-TN12P | 1U 双路服务器 | `supermicro-614-01` |
+| 615P-TN12P | 1U 双路服务器 | `supermicro-615-01` |
+| 616U-TN12P | 1U 双路服务器 | `supermicro-616-01` |
+
+**默认凭据**: `ADMIN / ADMIN`
+
+#### Lenovo ThinkSystem
+| 型号 | 说明 | 配置名称 |
+|------|------|---------|
+| SR650 | 2U 双路服务器 | `lenovo-sr650-01`, `lenovo-sr650-02` |
+| SR630 | 1U 双路服务器 | `lenovo-sr630-01` |
+| SR850 | 4U 四路服务器 | `lenovo-sr850-01` |
+| SR950 | 4U 四路服务器 | `lenovo-sr950-01` |
+| SN550 | 2U 存储服务器 | `lenovo-sn550-01` |
+
+**默认凭据**: `USERID / PASSW0RD`
+
+#### Fujitsu PRIMERGY
+| 型号 | 说明 | 配置名称 |
+|------|------|---------|
+| RX2540 M6 | 2U 双路服务器 | `fujitsu-rx2540-01` |
+| RX4770 M6 | 4U 四路服务器 | `fujitsu-rx4770-01` |
+
+**默认凭据**: `admin / admin`
+
+### 🔧 快速添加新服务器
+
+1. 在 `config/redfish-exporter/redfish.yml` 中复制对应厂商的配置模板
+2. 修改 `host_address`（BMC IP 地址）
+3. 修改 `password`（修改为实际密码）
+4. 重启 Redfish Exporter：
+   ```bash
+   docker-compose restart redfish-exporter
+   ```
+5. 验证采集：
+   ```bash
+   curl http://localhost:9610/redfish?target=dell-r740-01
+   ```
+
 ### 2. 配置 Redfish Exporter
 
 编辑 `config/redfish-exporter/redfish.yml`:
@@ -231,6 +308,51 @@ curl 'http://localhost:9290/ipmi?target=192.168.2.10&module=default'
 **状态值说明**:
 - `1` = 正常 (OK)
 - `0` = 告警 (Warning/Critical)
+
+### 预配置告警规则
+
+本平台已预配置完整的硬件监控告警规则（`config/vmalert/alerts/hardware-alerts.yml`）：
+
+#### 系统健康告警
+- `HardwareSystemHealthCritical` - 系统整体健康状态异常（P0）
+
+#### CPU 温度告警
+- `HardwareCPUTemperatureWarning` - CPU 温度超过 80°C（P2）
+- `HardwareCPUTemperatureCritical` - CPU 温度超过 90°C（P0）
+
+#### 内存告警
+- `HardwareMemoryECCWarnings` - 检测到内存 ECC 错误（P2）
+- `HardwareMemoryHealthCritical` - 内存健康状态异常（P0）
+
+#### 磁盘告警
+- `HardwareDiskTemperatureWarning` - 磁盘温度超过 55°C（P2）
+- `HardwareDiskTemperatureCritical` - 磁盘温度超过 65°C（P0）
+- `HardwareDiskPredictFailure` - 磁盘预测即将故障（P1）
+- `HardwareDiskMediaErrors` - 磁盘出现媒体错误（P1）
+- `HardwareDiskHealthCritical` - 磁盘健康状态异常（P0）
+
+#### 风扇告警
+- `HardwareFanSpeedLow` - 风扇转速低于 1000 RPM（P2）
+- `HardwareFanFailed` - 风扇故障（P0）
+
+#### 电源告警
+- `HardwarePowerSupplyFailed` - 电源供应故障（P0）
+- `HardwarePowerConsumptionHigh` - 功耗超过 800W（P2）
+
+#### 温度告警
+- `HardwareInletTemperatureWarning` - 进风口温度超过 30°C（P2）
+- `HardwareExhaustTemperatureWarning` - 出风口温度超过 45°C（P2）
+
+#### 其他硬件告警
+- `HardwareRAIDControllerFailed` - RAID 控制器状态异常（P0）
+- `HardwareNetworkInterfaceFailed` - 网络接口状态异常（P2）
+- `HardwareBMCDown` - BMC/iDRAC/iLO 不可达（P2）
+
+#### IPMI 告警（老服务器）
+- `IPMISensorFailed` - IPMI 传感器故障（P2）
+- `IPMITemperatureHigh` - IPMI 温度过高（P2）
+- `IPMIFanFailed` - IPMI 风扇故障（P0）
+- `IPMIPowerSupplyFailed` - IPMI 电源故障（P0）
 
 ### IPMI 关键指标
 

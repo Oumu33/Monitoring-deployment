@@ -324,11 +324,14 @@
 <td width="25%">
 
 **🔧 硬件监控**
-- Redfish Exporter
-- IPMI Exporter
-- 温度 / 风扇
-- 电源 / RAID
-- 硬盘 SMART
+- Redfish Exporter（新服务器统一方案）
+  - Dell PowerEdge: R640/R740/R740xd/R750/R750xa/R840/R940/C6420/C6525
+  - HPE ProLiant: DL360/DL380 Gen10/Gen11/DL385/DL560/BL460c/Synergy
+  - Supermicro: 6029P/613P/614U/615P/616U
+  - Lenovo ThinkSystem: SR650/SR630/SR850/SR950/SN550
+  - Fujitsu: PRIMERGY RX2540/RX4770
+- IPMI Exporter（老服务器兜底方案）
+- 温度 / 风扇 / 电源 / RAID / 硬盘 SMART / 内存 ECC
 
 **指标数**: 100+
 
@@ -711,8 +714,10 @@ topology_lacp_links < expected_value
 | **Promtail** | 日志采集 | 9080 | 100MB RAM | - |
 | **Topology Discovery** | 拓扑自动发现 | - | 50MB RAM | - |
 | **Topology Exporter** | 拓扑指标导出 | 9700 | 20MB RAM | - |
+| **Redfish Exporter** | 硬件监控（新服务器） | 9610 | 100MB RAM | - |
+| **IPMI Exporter** | 硬件监控（老服务器） | 9290 | 50MB RAM | - |
 
-**总资源需求**：4GB RAM | 20GB 磁盘（初始） | 2 CPU 核心
+**总资源需求**：4.5GB RAM | 20GB 磁盘（初始） | 2 CPU 核心
 
 ---
 
@@ -1456,7 +1461,7 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 | 文档 | 说明 | 难度 |
 |------|------|------|
 | [gNMI 网络监控](docs/GNMI-MONITORING.md) | 新一代流式遥测配置 | ⭐⭐⭐ |
-| [硬件监控](docs/HARDWARE-MONITORING.md) | Redfish + IPMI 配置 | ⭐⭐ |
+| [硬件监控](docs/HARDWARE-MONITORING.md) | Redfish + IPMI 配置（预配置 Dell R740/HPE/Supermicro/Lenovo/Fujitsu） | ⭐⭐ |
 | [VMware 多集群](docs/VMWARE-SOLUTION-COMPARISON.md) | vCenter 方案对比和选型 | ⭐⭐⭐ |
 | [交换机监控](docs/SWITCH-MONITORING.md) | SNMP 详细配置 | ⭐⭐ |
 | [性能调优](docs/PERFORMANCE-TUNING.md) | 大规模环境优化 (500+ 设备) | ⭐⭐⭐⭐ |

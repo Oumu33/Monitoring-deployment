@@ -1,0 +1,45 @@
+[
+  {
+    "targets": [
+      "dell-r740-01",
+      "dell-r740-02",
+      "dell-r740xd-01",
+      "dell-r640-01",
+      "dell-r750-01",
+      "dell-r750xa-01",
+      "dell-r840-01",
+      "dell-r940-01",
+      "dell-c6420-01",
+      "dell-c6525-01",
+      "hpe-dl360-gen10-01",
+      "hpe-dl360-gen10-02",
+      "hpe-dl380-gen10-01",
+      "hpe-dl380-gen10-02",
+      "hpe-dl360-gen11-01",
+      "hpe-dl380-gen11-01",
+      "hpe-dl385-gen10-01",
+      "hpe-dl560-gen10-01",
+      "hpe-bl460c-gen10-01",
+      "hpe-synergy-480-gen10-01",
+      "supermicro-6029p-01",
+      "supermicro-6029p-02",
+      "supermicro-613-01",
+      "supermicro-614-01",
+      "supermicro-615-01",
+      "supermicro-616-01",
+      "lenovo-sr650-01",
+      "lenovo-sr650-02",
+      "lenovo-sr630-01",
+      "lenovo-sr850-01",
+      "lenovo-sr950-01",
+      "lenovo-sn550-01",
+      "fujitsu-rx2540-01",
+      "fujitsu-rx4770-01"
+    ],
+    "labels": {
+      "device_type": "server",
+      "monitoring_method": "redfish",
+      "priority": "P0"
+    }
+  }
+]

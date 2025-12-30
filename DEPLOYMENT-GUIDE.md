@@ -1073,6 +1073,318 @@ curl 'http://localhost:8428/api/v1/query?query=probe_success'
 
 ---
 
+### 8. Redfish Exporter - 硬件监控（统一方案）
+
+#### 作用
+- **统一监控新一代服务器硬件**（Dell iDRAC、HPE iLO、Lenovo XClarity、Cisco UCS 等）
+- 通过 **Redfish REST API** 采集硬件健康状态
+- 监控温度、风扇、电源、内存、RAID、硬盘、固件等
+- **替代 IPMI 的现代化方案**（更安全、更标准）
+
+#### 数据暴露
+- **端口**: `:9610/redfish?target=<host>`
+- **协议**: HTTP GET（Exporter 作为代理，调用目标服务器的 Redfish API）
+- **格式**: Prometheus Exposition Format
+
+#### 配置文件位置
+```
+config/redfish-exporter/redfish.yml        # 服务器列表和认证
+```
+
+#### 支持的厂商（Redfish 标准）
+| 厂商 | 产品 | 默认用户名 | 默认密码 | Redfish 版本 |
+|------|------|-----------|---------|-------------|
+| Dell | iDRAC 7/8/9 | root | calvin | 1.0+ |
+| HPE | iLO 4/5/6 | Administrator | 随机 | 1.0+ |
+| Lenovo | XClarity Controller | USERID | PASSW0RD | 1.0+ |
+| Cisco | UCS CIMC | admin | password | 1.0+ |
+| Supermicro | 新款主板 (X11/X12) | ADMIN | ADMIN | 1.0+ |
+
+#### 关键配置参数
+```yaml
+# config/redfish-exporter/redfish.yml
+hosts:
+
+  # Dell iDRAC 示例
+  dell-server-01:
+    username: "root"
+    password: "calvin"              # ⚠️ 请修改为实际密码
+    host_address: "192.168.1.100"   # iDRAC IP 地址
+    insecure_skip_verify: true      # 如果使用自签名证书
+
+  # HPE iLO 示例
+  hpe-server-02:
+    username: "Administrator"
+    password: "your-ilo-password"
+    host_address: "192.168.1.110"
+    insecure_skip_verify: true
+
+  # Lenovo XClarity 示例
+  lenovo-server-03:
+    username: "USERID"
+    password: "PASSW0RD"
+    host_address: "192.168.1.120"
+
+  # Supermicro 示例
+  supermicro-server-04:
+    username: "ADMIN"
+    password: "ADMIN"
+    host_address: "192.168.1.130"
+```
+
+**安全建议**:
+- ✅ 修改默认密码
+- ✅ 使用只读账号（只需查询权限）
+- ✅ 不要将密码提交到 Git（使用 `.env` 文件或 secrets 管理）
+- ✅ 限制访问网络（管理网络隔离）
+
+#### 添加新服务器
+
+**步骤 1：验证 Redfish 支持**
+```bash
+# 测试 Dell iDRAC
+curl -k -u root:calvin https://192.168.1.100/redfish/v1/
+
+# 测试 HPE iLO
+curl -k -u Administrator:password https://192.168.1.110/redfish/v1/
+
+# 如果返回 JSON 数据（包含 @odata.type），说明支持 Redfish
+```
+
+**步骤 2：添加到配置文件**
+```yaml
+# config/redfish-exporter/redfish.yml
+hosts:
+  your-server-name:                 # 自定义名称（会作为标签）
+    username: "root"
+    password: "your-password"
+    host_address: "192.168.1.100"   # 管理口 IP
+    insecure_skip_verify: true
+```
+
+**步骤 3：重启 Redfish Exporter**
+```bash
+docker-compose restart redfish-exporter
+```
+
+**步骤 4：添加到 vmagent**
+```yaml
+# config/vmagent/prometheus.yml
+scrape_configs:
+  - job_name: 'redfish'
+    scrape_interval: 60s          # 硬件监控可以更慢
+    metrics_path: /redfish
+    static_configs:
+      - targets:
+        - dell-server-01          # 对应 redfish.yml 中的名称
+        - hpe-server-02
+        - lenovo-server-03
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: redfish-exporter:9610
+```
+
+**步骤 5：重载 vmagent**
+```bash
+curl -X POST http://localhost:8429/-/reload
+```
+
+#### 验证方式
+```bash
+# 1. 测试 Exporter（直接查询）
+curl 'http://localhost:9610/redfish?target=dell-server-01'
+
+# 2. 检查关键指标
+curl 'http://localhost:9610/redfish?target=dell-server-01' | grep -E "redfish_thermal_temperatures|redfish_power_supplies_state|redfish_memory_health_state"
+
+# 预期输出示例:
+# redfish_thermal_temperatures_celsius{name="CPU1 Temp",sensor_number="0"} 45
+# redfish_power_supplies_state{name="PS1"} 1                  # 1=正常
+# redfish_memory_health_state{name="DIMM_A1"} 1              # 1=正常
+
+# 3. 查看 vmagent 采集状态
+curl http://localhost:8429/targets | grep redfish
+
+# 4. 查询 VictoriaMetrics
+curl 'http://localhost:8428/api/v1/query?query=redfish_thermal_temperatures_celsius'
+```
+
+#### 监控指标类别
+
+**1. 温度监控**
+```promql
+# CPU 温度
+redfish_thermal_temperatures_celsius{name=~"CPU.*"}
+
+# 主板温度
+redfish_thermal_temperatures_celsius{name=~"System.*|Inlet.*"}
+
+# 硬盘温度
+redfish_thermal_temperatures_celsius{name=~"Disk.*"}
+```
+
+**2. 风扇监控**
+```promql
+# 风扇转速（RPM）
+redfish_thermal_fans_rpm
+
+# 风扇状态（1=正常，0=异常）
+redfish_thermal_fans_health_state
+```
+
+**3. 电源监控**
+```promql
+# 电源状态
+redfish_power_supplies_state
+
+# 功耗（瓦特）
+redfish_power_consumed_watts
+
+# 输入电压
+redfish_power_supplies_input_voltage
+```
+
+**4. 内存监控**
+```promql
+# 内存健康状态
+redfish_memory_health_state
+
+# 内存容量
+redfish_memory_capacity_bytes
+```
+
+**5. RAID 控制器**
+```promql
+# RAID 控制器状态
+redfish_storage_controller_health_state
+
+# 硬盘状态
+redfish_storage_drive_health_state
+
+# RAID 卷状态
+redfish_storage_volume_health_state
+```
+
+**6. 网卡监控**
+```promql
+# 网卡状态
+redfish_network_adapter_health_state
+
+# 网卡链路状态
+redfish_network_port_link_status
+```
+
+#### 分布式部署配置
+
+**场景：远程机房服务器监控**
+
+远程机房（192.168.2.0/24）:
+```yaml
+# docker-compose.yaml（仅部署 Redfish Exporter）
+services:
+  redfish-exporter:
+    image: jenningsloy318/redfish_exporter:latest
+    ports:
+      - "9610:9610"
+    volumes:
+      - ./redfish.yml:/etc/redfish_exporter/redfish.yml:ro
+    command:
+      - "--config.file=/etc/redfish_exporter/redfish.yml"
+```
+
+```yaml
+# redfish.yml（远程机房服务器）
+hosts:
+  remote-dell-01:
+    username: "root"
+    password: "password"
+    host_address: "192.168.2.100"  # 本地管理网络
+  remote-dell-02:
+    username: "root"
+    password: "password"
+    host_address: "192.168.2.101"
+```
+
+中心监控服务器:
+```yaml
+# config/vmagent/prometheus.yml
+scrape_configs:
+  - job_name: 'redfish-remote-dc2'
+    scrape_interval: 120s                # 远程可以更慢
+    metrics_path: /redfish
+    static_configs:
+      - targets:
+        - remote-dell-01
+        - remote-dell-02
+        labels:
+          datacenter: dc2                # 添加数据中心标签
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: 192.168.2.50:9610   # ← 远程 Exporter 地址
+```
+
+#### 对比：Redfish vs IPMI
+
+| 特性 | Redfish | IPMI |
+|------|---------|------|
+| 协议 | REST API (HTTPS) | UDP 623 + RMCP |
+| 数据格式 | JSON | 二进制 |
+| 安全性 | ✅ 强（HTTPS、RBAC） | ⚠️ 弱（明文密码、CVE 漏洞多） |
+| 标准化 | ✅ DMTF 统一标准 | ⚠️ 各厂商实现不同 |
+| 支持厂商 | 所有新一代服务器 | 老服务器 |
+| 监控粒度 | ✅ 详细（SMART、固件、网卡等） | ⚠️ 基础（温度、风扇、电源） |
+| 推荐场景 | **新服务器（2015 年后）** | 老服务器兜底 |
+
+**迁移建议**:
+- ✅ 新服务器：优先使用 Redfish
+- ⚠️ 老服务器（2015 年前）：如果不支持 Redfish，使用 IPMI Exporter
+- 🔄 混合环境：同时部署 Redfish + IPMI，按需选择
+
+#### 故障排查
+
+**问题 1：无法连接到 Redfish API**
+```bash
+# 检查 1: 测试网络连通性
+ping 192.168.1.100
+
+# 检查 2: 测试 HTTPS 端口
+curl -k https://192.168.1.100/redfish/v1/
+
+# 可能原因:
+# - 管理口 IP 配置错误
+# - 防火墙阻止
+# - Redfish 功能未启用（进入 iDRAC/iLO 设置启用）
+```
+
+**问题 2：认证失败**
+```bash
+# 测试凭据
+curl -k -u root:calvin https://192.168.1.100/redfish/v1/Systems
+
+# 可能原因:
+# - 密码错误
+# - 账号被锁定
+# - 需要修改默认密码后才能使用 API
+```
+
+**问题 3：某些指标缺失**
+```bash
+# 检查 Redfish 版本和支持的功能
+curl -k -u root:calvin https://192.168.1.100/redfish/v1/ | jq .RedfishVersion
+
+# 可能原因:
+# - 老版本固件（升级 iDRAC/iLO 固件）
+# - 硬件不支持（如无 RAID 卡则无 RAID 指标）
+```
+
+---
+
 ### 9. LLDP Topology Discovery - 拓扑发现
 
 #### 作用

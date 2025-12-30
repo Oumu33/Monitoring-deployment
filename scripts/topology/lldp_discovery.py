@@ -103,6 +103,35 @@ class TopologyDiscovery:
             logger.error(f"加载配置失败: {e}")
             self.devices = []
 
+    def load_redfish_servers(self, config_file='/etc/redfish_exporter/redfish.yml'):
+        """加载 Redfish 服务器配置"""
+        redfish_servers = []
+        try:
+            with open(config_file, 'r') as f:
+                redfish_config = yaml.safe_load(f)
+                # 解析 redfish.yml 中的服务器配置
+                for hostname, config in redfish_config.items():
+                    # 跳过注释和非配置项
+                    if hostname.startswith('#') or not isinstance(config, dict):
+                        continue
+                    server = {
+                        'name': hostname,
+                        'host': config.get('host_address'),
+                        'type': 'server',
+                        'monitoring_method': 'redfish',
+                        'vendor': config.get('vendor', 'unknown'),
+                        'model': config.get('model', 'unknown'),
+                        'serial_number': config.get('serial_number', ''),
+                        'asset_tag': config.get('asset_tag', ''),
+                        'location': config.get('location', ''),
+                        'tier': 'access'  # 服务器默认为接入层
+                    }
+                    redfish_servers.append(server)
+                logger.info(f"加载了 {len(redfish_servers)} 台 Redfish 服务器")
+        except Exception as e:
+            logger.error(f"加载 Redfish 配置失败: {e}")
+        return redfish_servers
+
     def load_previous_topology(self):
         """加载上一次的拓扑（用于变化检测）"""
         try:
@@ -653,12 +682,36 @@ class TopologyDiscovery:
     def discover_topology(self, max_workers=10):
         """发现整体拓扑（并发查询，支持多协议）"""
         logger.info("=" * 60)
-        logger.info("开始网络拓扑发现（支持 LLDP + CDP + NDP + LNP）...")
+        logger.info("开始网络拓扑发现（支持 LLDP + CDP + NDP + LNP + Redfish）...")
         logger.info(f"设备数量: {len(self.devices)}, 并发数: {max_workers}")
         logger.info("=" * 60)
 
         self.metrics['start_time'] = time.time()
         all_neighbors = []
+
+        # 加载并添加 Redfish 服务器到拓扑
+        redfish_servers = self.load_redfish_servers()
+        if redfish_servers:
+            logger.info(f"添加 {len(redfish_servers)} 台 Redfish 服务器到拓扑")
+            for server in redfish_servers:
+                server_name = server['name']
+                if server_name not in self.topology['nodes']:
+                    self.topology['nodes'][server_name] = {
+                        'name': server_name,
+                        'host': server['host'],
+                        'type': server['type'],
+                        'tier': server['tier'],
+                        'location': server.get('location', 'unknown'),
+                        'vendor': server.get('vendor', 'unknown'),
+                        'model': server.get('model', 'unknown'),
+                        'serial_number': server.get('serial_number', ''),
+                        'asset_tag': server.get('asset_tag', ''),
+                        'monitoring_method': server['monitoring_method'],
+                        'protocols_supported': ['redfish']
+                    }
+                    logger.debug(f"添加 Redfish 服务器节点: {server_name}")
+                with self.lock:
+                    self.metrics['devices_discovered'] += 1
 
         # 使用线程池并发采集
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
