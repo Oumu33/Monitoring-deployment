@@ -1,6 +1,6 @@
 # ===================================================================
 # 网络设备配置文件
-# 用途: LLDP 拓扑发现的设备列表
+# 用途: 拓扑发现的设备列表（支持 LLDP 和 CDP）
 # ===================================================================
 
 devices:
@@ -13,6 +13,7 @@ devices:
     location: dc1-rack-A01
     snmp_community: public  # 生产环境使用强密码
     snmp_port: 161
+    # protocol: cdp  # 可选：强制使用 CDP（Cisco 设备）
 
   - name: Switch-Core-02
     host: 192.168.1.101
@@ -30,6 +31,7 @@ devices:
   #   vendor: arista
   #   location: dc1-rack-B01
   #   snmp_community: public
+  #   # protocol: lldp  # 可选：强制使用 LLDP
 
   # ===== 接入交换机 =====
   # - name: Switch-Access-01
@@ -58,18 +60,26 @@ devices:
 #   - snmp_community: SNMP 团体字符串
 #
 # 可选字段:
-#   - type: 设备类型 (switch/router/firewall)
+#   - type: 设备类型 (switch/router/firewall/server)
 #   - tier: 网络层级 (core/aggregation/access)
-#   - vendor: 厂商 (cisco/arista/juniper/huawei)
+#   - vendor: 厂商 (cisco/arista/juniper/huawei/h3c)
 #   - location: 物理位置 (数据中心-机架-U位)
 #   - snmp_port: SNMP 端口（默认 161）
+#   - protocol: 强制使用协议 (lldp/cdp/auto)
+#
+# 协议支持:
+#   - LLDP: IEEE 802.1AB（通用标准）
+#   - CDP: Cisco Discovery Protocol（Cisco 专有）
+#   - 自动: 优先 LLDP，失败则尝试 CDP（仅 Cisco 设备）
 #
 # SNMP 配置:
-#   确保设备已启用 SNMP 和 LLDP:
+#   确保设备已启用 SNMP 和 LLDP/CDP:
 #
 #   Cisco:
 #     snmp-server community public RO
 #     lldp run
+#     # 或
+#     cdp run
 #
 #   Arista:
 #     snmp-server community public ro
@@ -78,5 +88,15 @@ devices:
 #   Juniper:
 #     set snmp community public authorization read-only
 #     set protocols lldp interface all
+#
+#   Huawei:
+#     snmp-agent community read public
+#     lldp enable
+#
+# 性能优化:
+#   - 并发查询：默认 10 个线程
+#   - 错误重试：最多 3 次，指数退避
+#   - 适合规模：200-500 台设备
+#   - 采集时间：100 台约 30 秒，500 台约 2-3 分钟
 #
 # ===================================================================
