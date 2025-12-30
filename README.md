@@ -422,9 +422,9 @@
 # 1. 打开 Grafana
 http://localhost:3000
 
-# 2. 导航到 Dashboards → Browse → Server Overview
+# 2. 导航到 Dashboards → Browse → Server Hardware Overview
 
-# 3. 在 CPU Usage 图表中点击异常时间点
+# 3. 在硬件监控图表中点击异常指标
 # 自动跳转到 Logs Explorer 面板
 # 自动显示该时间段的日志
 
@@ -481,30 +481,32 @@ http://localhost:3000
 
 ### 🎨 Grafana 面板使用
 
-**1. Server Overview（服务器概览）**
-- 显示服务器的 CPU、内存、磁盘、网络指标
-- 点击图表标题 → 自动跳转到 Logs Explorer
-- 自动传递时间范围和 instance 参数
-- 显示服务器状态表格
+**1. Server Hardware Overview（服务器硬件监控）**
+- 硬盘 SMART 状态、风扇状态、电源状态监控
+- 温度监控（CPU、硬盘、进风口、出风口）
+- 内存 ECC 错误、硬盘错误监控
+- 功耗和风扇转速监控
+- 所有硬件监控项都支持点击跳转到 Logs Explorer
 - 点击顶部链接 → 跳转到 Network Overview / Network Topology / Logs Explorer
 
 **2. Network Overview（网络设备概览）**
 - 显示网络设备（交换机、路由器）的 CPU、内存、接口流量
-- 点击图表标题 → 自动跳转到 Logs Explorer
-- 自动传递时间范围和 instance 参数
-- 显示设备状态表格
-- 点击顶部链接 → 跳转到 Server Overview / Network Topology / Logs Explorer
+- 接口状态、错误率、丢包率、带宽利用率监控
+- 硬件健康监控（电源、风扇、温度）
+- STP 状态、ARP/MAC 表、路由表监控
+- 所有监控项都支持点击跳转到 Logs Explorer
+- 点击顶部链接 → 跳转到 Server Hardware Overview / Network Topology / Logs Explorer
 
 **3. Logs Explorer（日志查询）**
 - 显示指定 instance 的日志
 - 自动过滤时间范围
 - 点击 "View Topology" → 自动跳转到 Network Topology
-- 点击顶部链接 → 跳转到 Server Overview / Network Overview / Network Topology
+- 点击顶部链接 → 跳转到 Server Hardware Overview / Network Overview / Network Topology
 
 **4. Network Topology（网络拓扑）**
 - Node Graph 可视化设备连接关系
 - 显示设备层级（core/aggregation/access）
-- 点击顶部链接 → 跳转到 Server Overview / Network Overview / Logs Explorer
+- 点击顶部链接 → 跳转到 Server Hardware Overview / Network Overview / Logs Explorer
 
 **5. 拓扑标签查询**
 - 查询所有核心交换机的 CPU 使用率
@@ -778,16 +780,16 @@ topology_lacp_links < expected_value
 
 ### 🚀 快速上手
 
-#### 场景 1：服务器监控
+#### 场景 1：服务器硬件监控
 
-**步骤 1：查看 Metrics**
+**步骤 1：查看硬件状态**
 1. 打开 Grafana：`http://localhost:3000`
-2. 进入 **Dashboards** → **Browse** → **Server Overview**
-3. 查看 CPU、内存、磁盘、网络指标
+2. 进入 **Dashboards** → **Browse** → **Server Hardware Overview**
+3. 查看硬盘、风扇、电源、温度等硬件状态
 4. 找到异常指标（红色或黄色）
 
 **步骤 2：点击跳转到 Logs**
-1. 在 Server Overview 面板中点击异常图表标题
+1. 在 Server Hardware Overview 面板中点击异常图表标题
 2. **自动跳转到 Logs Explorer 面板**
 3. 自动显示该时间段的日志
 
@@ -797,9 +799,9 @@ topology_lacp_links < expected_value
 3. 查看设备的拓扑连接关系
 
 **步骤 4：根因分析**
-1. 综合查看 Metrics、Logs、Topology
+1. 综合查看 Hardware、Logs、Topology
 2. 分析三者关系
-3. 快速定位根因
+3. 快速定位硬件故障
 
 #### 场景 2：网络设备监控
 
@@ -826,38 +828,44 @@ topology_lacp_links < expected_value
 
 ### 📊 实际案例演示
 
-#### 案例：服务器 CPU 使用率异常
+#### 案例：服务器硬盘故障
 
-**问题**：Server-01 CPU 使用率突然上升到 90%
+**问题**：Server-01 硬盘 SMART 状态异常
 
 **分析过程（自动跳转）**：
 
-1. **打开 Server Overview 面板**
+1. **打开 Server Hardware Overview 面板**
    ```
-   Grafana → Dashboards → Server Overview
+   Grafana → Dashboards → Server Hardware Overview
    ```
 
-2. **点击 CPU Usage 图表中的异常时间点**
+2. **查看 Disk Failed 指标**
+   ```
+   发现 Server-01 有 1 个硬盘故障
+   点击 Disk Failed 图表
+   ```
+
+3. **自动跳转到 Logs Explorer**
    ```
    自动跳转到 Logs Explorer 面板
-   自动设置时间范围：10:25 ~ 10:35
+   自动设置时间范围
    自动过滤 instance="Server-01"
    ```
 
-3. **查看日志**
+4. **查看日志**
    ```
    日志内容：
-   2025-01-15T10:30:15Z [ERROR] Backup process started
-   2025-01-15T10:30:20Z [INFO] Backup job consuming high CPU
+   2025-01-15T10:30:15Z [ERROR] Disk /dev/sda SMART status: FAILED
+   2025-01-15T10:30:20Z [WARNING] Drive media errors detected
    ```
 
-4. **点击 "View Topology" 链接**
+5. **点击 "View Topology" 链接**
    ```
    自动跳转到 Network Topology 面板
    查看 Server-01 的拓扑连接关系
    ```
 
-5. **查看拓扑链路**
+6. **查看拓扑链路**
    ```
    拓扑链路：
      Server-01 → Switch-Access-01 → Switch-Core-01
@@ -867,30 +875,51 @@ topology_lacp_links < expected_value
      - 端口：Gi0/1
      - 协议：LLDP
    ```
-   ```
 
-4. **根因确认**
+7. **根因确认**
    ```
-   结论：Server-01 备份任务导致 CPU 升高
-   建议：调整备份任务时间或降低备份优先级
+   结论：Server-01 硬盘 /dev/sda 故障
+   建议：立即更换硬盘，恢复数据
    ```
 
 **总耗时**：5-10 分钟
 
 ### 🎨 Grafana 面板说明
 
-#### 1. Network Topology（网络拓扑）
+**1. Server Hardware Overview（服务器硬件监控）**
+- 硬盘 SMART 状态监控
+- 风扇状态监控
+- 电源状态监控
+- 温度监控（CPU、硬盘、进风口、出风口）
+- 内存 ECC 错误监控
+- 功耗和风扇转速监控
+- 所有硬件监控项都支持点击跳转到 Logs Explorer
+- 点击顶部链接 → 跳转到 Network Overview / Network Topology / Logs Explorer
+
+**2. Network Overview（网络设备监控）**
+- 显示网络设备（交换机、路由器）的 CPU、内存、接口流量
+- 接口状态、错误率、丢包率监控
+- 接口带宽利用率监控
+- 硬件健康监控（电源、风扇、温度）
+- STP 状态、ARP/MAC 表、路由表监控
+- 所有监控项都支持点击跳转到 Logs Explorer
+- 点击顶部链接 → 跳转到 Server Hardware Overview / Network Topology / Logs Explorer
+
+**3. Network Topology（网络拓扑）**
 - 自动生成的拓扑图
 - 支持缩放、拖拽
 - 显示设备层级和连接关系
 - 支持拓扑标签查询
+- 点击顶部链接 → 跳转到 Server Hardware Overview / Network Overview / Logs Explorer
 
-#### 2. Logs Explorer（日志探索）
+**4. Logs Explorer（日志探索）**
 - 支持全文搜索
 - 支持标签过滤
 - 支持时间范围查询
+- 点击 "View Topology" → 自动跳转到 Network Topology
+- 点击顶部链接 → 跳转到 Server Hardware Overview / Network Overview / Network Topology
 
-#### 3. Explore（指标查询）
+**5. Explore（指标查询）**
 - 支持所有指标的查询
 - 支持拓扑标签过滤
 - 支持复杂 PromQL 查询
