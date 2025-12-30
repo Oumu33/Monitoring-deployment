@@ -1,4 +1,5 @@
-# 🚀 企业基础设施可观测性平台
+# 🚀 Enterprise Infrastructure Observability Platform
+<div align="center">企业基础设施可观测性平台</div>
 
 <div align="center">
 
@@ -7,103 +8,118 @@
 [![VictoriaMetrics](https://img.shields.io/badge/VictoriaMetrics-latest-green.svg)](https://victoriametrics.com/)
 [![Grafana](https://img.shields.io/badge/Grafana-11.0%2B-orange.svg)](https://grafana.com/)
 
-**生产级企业基础设施可观测性平台**
+**Production-Grade Enterprise Infrastructure Observability Platform**
+<div align="center">生产级企业基础设施可观测性平台</div>
 
-*指标 + 日志 + 拓扑 | 智能根因分析 | 零配置拓扑发现*
+*Metrics + Logs + Topology | AI-driven Root Cause Analysis | Zero-Config Topology Discovery*
+<div align="center">指标 + 日志 + 拓扑 | 智能根因分析 | 零配置拓扑发现</div>
 
-[快速开始](#-快速开始) • [核心特性](#-核心特性) • [架构设计](#-architecture) • [完整文档](#-documentation)
+[Quick Start](#-quick-start) • [Core Features](#-core-features) • [Architecture](#-architecture) • [Documentation](#-documentation)
+<div align="center">快速开始 • 核心特性 • 架构设计 • 完整文档</div>
 
 </div>
 
 ---
 
-## 📊 平台概览
+## 📊 Platform Overview
+<div align="center">平台概览</div>
 
 <table>
 <tr>
-<td align="center"><b>🎯 监控覆盖</b><br/>16 种采集器<br/>1000+ 指标维度</td>
-<td align="center"><b>⚡ 性能表现</b><br/>100+ 设备支持<br/>12 个月数据保留</td>
-<td align="center"><b>🧠 智能告警</b><br/>95% 告警降噪<br/>60秒根因定位</td>
-<td align="center"><b>🗺️ 自动拓扑</b><br/>LLDP 零配置<br/>3 层标签注入</td>
+<td align="center"><b>🎯 Monitoring Coverage</b><br/>监控覆盖<br/>16 种采集器<br/>1000+ 指标维度</td>
+<td align="center"><b>⚡ Performance</b><br/>性能表现<br/>100+ 设备支持<br/>12 个月数据保留</td>
+<td align="center"><b>🧠 Intelligent Alerting</b><br/>智能告警<br/>95% 告警降噪<br/>60s 根因定位</td>
+<td align="center"><b>🗺️ Auto Topology</b><br/>自动拓扑<br/>LLDP 零配置<br/>3 层标签注入</td>
 </tr>
 </table>
 
-### ✨ 核心价值
+### ✨ Core Value
+<div align="center">核心价值</div>
 
 ```diff
-- 传统监控：核心交换机故障 → 20 封告警邮件 → 人工排查 30 分钟
-+ 智能平台：自动根因分析 → 1 封精准告警 → 自动定位 < 1 分钟
+- Traditional Monitoring: Core switch failure → 20 alert emails → 30 min manual investigation
++ Intelligent Platform: Auto root cause analysis → 1 precise alert → Auto location < 1 min
 
-效果：告警数量 ↓95% | 故障定位时间 ↓97% | 运维成本 ↓80%
+<div align="center">效果：告警数量 ↓95% | 故障定位时间 ↓97% | 运维成本 ↓80%</div>
 ```
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
+<div align="center">快速开始</div>
 
 这是一个**生产就绪**的企业级基础设施可观测性平台，基于 **VictoriaMetrics** 构建，专为混合基础设施环境设计。
 
-### 🌟 为什么选择本平台？
+### 🌟 Why Choose This Platform?
+<div align="center">为什么选择本平台？</div>
 
 <table>
 <tr>
-<th width="25%">对比维度</th>
-<th width="25%">商业方案 (Datadog/Dynatrace)</th>
-<th width="25%">传统开源 (Prometheus)</th>
-<th width="25%">本平台 ⭐</th>
+<th width="25%">Comparison Dimension<br/>对比维度</th>
+<th width="25%">Commercial Solution<br/>商业方案 (Datadog/Dynatrace)</th>
+<th width="25%">Traditional Open Source<br/>传统开源 (Prometheus)</th>
+<th width="25%">This Platform ⭐<br/>本平台</th>
 </tr>
 <tr>
-<td><b>部署时间</b></td>
-<td>2-4 周（需培训）</td>
-<td>1-2 周（需大量配置）</td>
-<td><b>5 分钟</b>（开箱即用）</td>
+<td><b>Deployment Time<br/>部署时间</b></td>
+<td>2-4 weeks (training required)</td>
+<td>1-2 weeks (heavy configuration)</td>
+<td><b>5 minutes</b> (out-of-the-box)</td>
 </tr>
 <tr>
-<td><b>年度成本</b></td>
+<td><b>Annual Cost<br/>年度成本</b></td>
 <td>$50K-$200K+</td>
-<td>免费（高人力成本）</td>
-<td><b>免费</b>（低维护）</td>
+<td>Free (high labor cost)</td>
+<td><b>Free</b> (low maintenance)</td>
 </tr>
 <tr>
-<td><b>根因分析</b></td>
-<td>✅ AI 驱动</td>
-<td>❌ 需手动配置</td>
-<td>✅ <b>拓扑智能分析</b></td>
+<td><b>Root Cause Analysis<br/>根因分析</b></td>
+<td>✅ AI-driven</td>
+<td>❌ Manual configuration</td>
+<td>✅ <b>Topology Intelligence</b></td>
 </tr>
 <tr>
-<td><b>拓扑发现</b></td>
-<td>✅ 自动（黑盒）</td>
-<td>❌ 不支持</td>
-<td>✅ <b>LLDP 自动 + 可视化</b></td>
+<td><b>Topology Discovery<br/>拓扑发现</b></td>
+<td>✅ Automatic (black-box)</td>
+<td>❌ Not supported</td>
+<td>✅ <b>LLDP Auto + Visualization</b></td>
 </tr>
 <tr>
-<td><b>性能</b></td>
-<td>云端处理</td>
-<td>单节点 50 设备</td>
-<td><b>100+ 设备</b>（7x 压缩）</td>
+<td><b>Performance<br/>性能</b></td>
+<td>Cloud processing</td>
+<td>Single node 50 devices</td>
+<td><b>100+ devices</b> (7x compression)</td>
 </tr>
 <tr>
-<td><b>数据主权</b></td>
-<td>❌ 云端存储</td>
-<td>✅ 本地</td>
-<td>✅ <b>完全自主</b></td>
+<td><b>Data Sovereignty<br/>数据主权</b></td>
+<td>❌ Cloud storage</td>
+<td>✅ On-premise</td>
+<td>✅ <b>Full Control</b></td>
 </tr>
 </table>
 
-### 🎯 适用场景
+### 🎯 Use Cases
+<div align="center">适用场景</div>
 
+| Scenario | Scale | Description |
 | 场景 | 规模 | 说明 |
 |------|------|------|
+| **Hybrid Infrastructure** | 50-500 devices | Linux + VMware + Network + Physical Servers |
 | **混合基础设施** | 50-500 设备 | Linux + VMware + 网络设备 + 物理服务器 |
+| **Multi-Datacenter** | 3-10 DCs | Unified monitoring + Distributed collection |
 | **多数据中心** | 3-10 个 DC | 统一监控 + 分布式采集 |
+| **DevOps Team** | 5-20 people | Quick deployment, low learning curve, automation |
 | **DevOps 团队** | 5-20 人 | 快速部署、低学习成本、自动化 |
+| **Enterprise Production** | 7×24 availability | HA deployment, complete alerting, SLA guarantee |
 | **企业级生产** | 7×24 可用 | HA 部署、完整告警、SLA 保障 |
 
 ---
 
-## ✨ 核心特性
+## ✨ Core Features
+<div align="center">核心特性</div>
 
-### 🧠 1. 智能根因分析（业界领先）
+### 🧠 1. Intelligent Root Cause Analysis (Industry Leading)
+<div align="center">智能根因分析（业界领先）</div>
 
 **问题场景**：
 ```
@@ -602,9 +618,11 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 
 ---
 
-## 📊 监控覆盖范围
+## 📊 Monitoring Coverage
+<div align="center">监控覆盖范围</div>
 
-### 预置告警规则（50+）
+### Pre-configured Alert Rules (50+)
+<div align="center">预置告警规则（50+）</div>
 
 | 类别 | 规则数 | 示例 | 严重程度 |
 |------|-------|------|---------|
@@ -680,9 +698,11 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 
 ---
 
-## 🗺️ 拓扑自动发现
+## 🗺️ Topology Discovery
+<div align="center">拓扑自动发现</div>
 
-### 完整工作流程
+### Complete Workflow
+<div align="center">完整工作流程</div>
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -746,9 +766,11 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 
 ---
 
-## 📝 日志聚合
+## 📝 Logs Aggregation
+<div align="center">日志聚合</div>
 
-### 指标 + 日志联动查询
+### Metrics + Logs Correlation
+<div align="center">指标 + 日志联动查询</div>
 
 **场景：服务器网络延迟突增**
 
@@ -810,9 +832,11 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 
 ---
 
-## 🛠️ 运维操作
+## 🛠️ Operations
+<div align="center">运维操作</div>
 
-### 日常运维命令
+### Daily Operations Commands
+<div align="center">日常运维命令</div>
 
 ```bash
 # ========== 服务管理 ==========
@@ -938,9 +962,11 @@ docker-compose up -d
 
 ---
 
-## 📈 性能与扩展
+## 📈 Performance & Scale
+<div align="center">性能与扩展</div>
 
-### 性能指标
+### Performance Metrics
+<div align="center">性能指标</div>
 
 | 指标 | 单节点 | 集群模式 | 说明 |
 |------|-------|---------|------|
@@ -1023,9 +1049,11 @@ vmagent --remoteWrite.label=datacenter=dc1
 
 ---
 
-## 🤝 贡献指南
+## 🤝 Contributing
+<div align="center">贡献指南</div>
 
-我们欢迎所有形式的贡献！无论是报告 Bug、提出功能建议、改进文档还是提交代码。
+We welcome all forms of contributions! Whether reporting bugs, suggesting features, improving documentation, or submitting code.
+<div align="center">我们欢迎所有形式的贡献！无论是报告 Bug、提出功能建议、改进文档还是提交代码。</div>
 
 ### 快速贡献
 
@@ -1094,9 +1122,11 @@ Closes #123
 
 ---
 
-## 🙏 致谢
+## 🙏 Acknowledgments
+<div align="center">致谢</div>
 
-本项目基于以下优秀的开源项目构建：
+This project is built upon the following excellent open source projects:
+<div align="center">本项目基于以下优秀的开源项目构建：</div>
 
 <table>
 <tr>
@@ -1135,9 +1165,11 @@ in the Software without restriction...
 
 ---
 
-## 💬 社区与支持
+## 💬 Community & Support
+<div align="center">社区与支持</div>
 
-### 获取帮助
+### Getting Help
+<div align="center">获取帮助</div>
 
 | 渠道 | 适用场景 | 响应时间 |
 |------|---------|---------|
