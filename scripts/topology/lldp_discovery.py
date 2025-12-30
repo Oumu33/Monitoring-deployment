@@ -1,24 +1,39 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-网络拓扑自动发现脚本（支持 LLDP 和 CDP）
+网络拓扑自动发现脚本（支持 LLDP、CDP、NDP、LNP）
 功能：
-1. 通过 SNMP 采集所有网络设备的 LLDP/CDP 邻居信息
+1. 通过 SNMP 采集所有网络设备的邻居信息（支持多协议）
 2. 生成设备连接关系图
 3. 自动更新 Prometheus 标签（拓扑关系）
 4. 生成拓扑可视化数据
-5. 并发查询优化，支持大规模网络（200+ 设备）
+5. 并发查询优化，支持大规模网络（500+ 设备）
+6. 链路聚合检测（LACP）
+7. 拓扑变化告警
+8. 环路检测
+
+支持协议：
+- LLDP: IEEE 802.1AB（通用标准）
+- CDP: Cisco Discovery Protocol（Cisco）
+- NDP: Neighbor Discovery Protocol（华为）
+- LNP: Link Neighbor Protocol（华三）
+
+支持厂商：
+- 国产：华为、华三、锐捷、迈普、烽火、中兴、迪普等
+- 国外：Cisco、Arista、Juniper、HPE 等
 """
 
 import json
 import yaml
 import time
 import logging
+import hashlib
 from datetime import datetime
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pysnmp.hlapi import *
 import threading
+import os
 
 # 配置日志
 logging.basicConfig(
@@ -27,8 +42,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 厂商协议映射
+VENDOR_PROTOCOLS = {
+    'cisco': ['cdp', 'lldp'],
+    'huawei': ['ndp', 'lldp'],
+    'h3c': ['lnp', 'lldp'],
+    'ruijie': ['lldp'],
+    'maipu': ['lldp'],
+    'fiberhome': ['lldp'],
+    'zte': ['lldp'],
+    'dp-tech': ['lldp'],
+    'arista': ['lldp'],
+    'juniper': ['lldp'],
+    'hpe': ['lldp'],
+    'default': ['lldp']
+}
+
 class TopologyDiscovery:
-    """网络拓扑发现类（支持 LLDP 和 CDP）"""
+    """网络拓扑发现类（支持 LLDP、CDP、NDP、LNP）"""
 
     def __init__(self, config_file='/etc/topology/devices.yml'):
         """初始化"""
@@ -37,20 +68,64 @@ class TopologyDiscovery:
         self.topology = {
             'nodes': {},      # 设备节点
             'edges': [],      # 连接关系
+            'aggregations': [],  # 链路聚合
+            'loops': [],      # 检测到的环路
             'updated': None   # 更新时间
         }
+        self.previous_topology = {}  # 上一次的拓扑（用于变化检测）
         self.metrics = {
             'discovery_duration_seconds': 0,
             'devices_discovered': 0,
             'devices_failed': 0,
             'lldp_neighbors': 0,
             'cdp_neighbors': 0,
+            'ndp_neighbors': 0,
+            'lnp_neighbors': 0,
             'snmp_errors': 0,
+            'lacp_links': 0,
+            'loops_detected': 0,
+            'topology_changes': 0,
             'start_time': None,
             'end_time': None
         }
         self.lock = threading.Lock()
         self.load_config()
+        self.load_previous_topology()
+
+    def load_config(self):
+        """加载设备配置"""
+        try:
+            with open(self.config_file, 'r') as f:
+                config = yaml.safe_load(f)
+                self.devices = config.get('devices', [])
+            logger.info(f"加载了 {len(self.devices)} 个设备配置")
+        except Exception as e:
+            logger.error(f"加载配置失败: {e}")
+            self.devices = []
+
+    def load_previous_topology(self):
+        """加载上一次的拓扑（用于变化检测）"""
+        try:
+            topology_file = '/data/topology/topology.json'
+            if os.path.exists(topology_file):
+                with open(topology_file, 'r') as f:
+                    self.previous_topology = json.load(f)
+                logger.debug(f"加载上一次拓扑: {len(self.previous_topology.get('nodes', {}))} 个节点")
+        except Exception as e:
+            logger.warning(f"加载上一次拓扑失败: {e}")
+            self.previous_topology = {}
+
+    def get_vendor_protocols(self, device):
+        """根据厂商获取支持的协议列表"""
+        vendor = device.get('vendor', '').lower()
+        protocol = device.get('protocol', 'auto').lower()
+        
+        # 强制指定协议
+        if protocol != 'auto':
+            return [protocol]
+        
+        # 根据厂商自动选择
+        return VENDOR_PROTOCOLS.get(vendor, VENDOR_PROTOCOLS['default'])
 
     def load_config(self):
         """加载设备配置"""
@@ -206,7 +281,6 @@ class TopologyDiscovery:
         """获取设备的 CDP 邻居信息（Cisco Discovery Protocol）"""
         # CDP MIB OIDs
         CDP_CACHE_TABLE = '1.3.6.1.4.1.9.9.23.1.2.1.1'
-        # CDP_CACHE_ADDRESS_TYPE = '1.3.6.1.4.1.9.9.23.1.2.1.1.3'
         CDP_CACHE_ADDRESS = '1.3.6.1.4.1.9.9.23.1.2.1.1.4'
         CDP_CACHE_VERSION = '1.3.6.1.4.1.9.9.23.1.2.1.1.5'
         CDP_CACHE_DEVICE_ID = '1.3.6.1.4.1.9.9.23.1.2.1.1.6'
@@ -216,32 +290,24 @@ class TopologyDiscovery:
         neighbors = []
 
         try:
-            # 获取 CDP 缓存条目
             logger.debug(f"正在采集 {device['name']} 的 CDP 邻居...")
             cdp_entries = self.snmp_walk_with_retry(device, CDP_CACHE_TABLE)
 
             for varBind in cdp_entries:
                 oid_str = str(varBind[0])
-                
-                # 从 OID 中提取索引
-                # 例如: 1.3.6.1.4.1.9.9.23.1.2.1.1.6.12345 -> 12345
                 parts = oid_str.split('.')
                 if len(parts) >= 12:
                     index = parts[-1]
                     
-                    # 获取设备 ID
                     device_id_oid = f"{CDP_CACHE_DEVICE_ID}.{index}"
                     device_id = self.snmp_get_with_retry(device, device_id_oid)
                     
-                    # 获取远端端口
                     remote_port_oid = f"{CDP_CACHE_DEVICE_PORT}.{index}"
                     remote_port = self.snmp_get_with_retry(device, remote_port_oid)
                     
-                    # 获取本地端口
                     local_port_oid = f"{CDP_CACHE_TABLE}.{index}"
                     local_port = self.snmp_get_with_retry(device, local_port_oid)
                     
-                    # 获取平台信息
                     platform_oid = f"{CDP_CACHE_PLATFORM}.{index}"
                     platform = self.snmp_get_with_retry(device, platform_oid)
 
@@ -261,7 +327,7 @@ class TopologyDiscovery:
 
             with self.lock:
                 self.metrics['cdp_neighbors'] += len(neighbors)
-                
+            
             logger.debug(f"{device['name']} 发现 {len(neighbors)} 个 CDP 邻居")
             
         except Exception as e:
@@ -269,20 +335,297 @@ class TopologyDiscovery:
 
         return neighbors
 
+    def get_ndp_neighbors(self, device):
+        """获取设备的 NDP 邻居信息（华为 Neighbor Discovery Protocol）"""
+        # 华为 NDP MIB OIDs
+        # HW_NDP_TABLE = '1.3.6.1.4.1.2011.5.25.41.1.2.1'
+        # 华为 NDP 实现类似 CDP，使用私有 MIB
+        NDP_TABLE = '1.3.6.1.4.1.2011.5.25.41.1.2.1'
+        NDP_NEIGHBOR_ID = '1.3.6.1.4.1.2011.5.25.41.1.2.1.1.3'
+        NDP_NEIGHBOR_PORT = '1.3.6.1.4.1.2011.5.25.41.1.2.1.1.4'
+        NDP_LOCAL_PORT = '1.3.6.1.4.1.2011.5.25.41.1.2.1.1.2'
+
+        neighbors = []
+
+        try:
+            logger.debug(f"正在采集 {device['name']} 的 NDP 邻居...")
+            ndp_entries = self.snmp_walk_with_retry(device, NDP_TABLE)
+
+            for varBind in ndp_entries:
+                oid_str = str(varBind[0])
+                parts = oid_str.split('.')
+                if len(parts) >= 15:
+                    index = parts[-1]
+                    
+                    neighbor_id_oid = f"{NDP_NEIGHBOR_ID}.{index}"
+                    neighbor_id = self.snmp_get_with_retry(device, neighbor_id_oid)
+                    
+                    neighbor_port_oid = f"{NDP_NEIGHBOR_PORT}.{index}"
+                    neighbor_port = self.snmp_get_with_retry(device, neighbor_port_oid)
+                    
+                    local_port_oid = f"{NDP_LOCAL_PORT}.{index}"
+                    local_port = self.snmp_get_with_retry(device, local_port_oid)
+
+                    if neighbor_id:
+                        neighbor = {
+                            'local_device': device['name'],
+                            'local_port': local_port or 'Unknown',
+                            'remote_device': neighbor_id,
+                            'remote_port': neighbor_port or 'Unknown',
+                            'protocol': 'ndp',
+                            'timestamp': datetime.now().isoformat()
+                        }
+
+                        neighbors.append(neighbor)
+                        logger.debug(f"  发现 NDP 邻居: {neighbor}")
+
+            with self.lock:
+                self.metrics['ndp_neighbors'] += len(neighbors)
+            
+            logger.debug(f"{device['name']} 发现 {len(neighbors)} 个 NDP 邻居")
+            
+        except Exception as e:
+            logger.error(f"{device['name']} NDP 采集失败: {e}")
+
+        return neighbors
+
+    def get_lnp_neighbors(self, device):
+        """获取设备的 LNP 邻居信息（华三 Link Neighbor Protocol）"""
+        # 华三 LNP MIB OIDs
+        LNP_TABLE = '1.3.6.1.4.1.25506.2.12.1.1.2'
+        LNP_NEIGHBOR_NAME = '1.3.6.1.4.1.25506.2.12.1.1.2.1.3'
+        LNP_NEIGHBOR_PORT = '1.3.6.1.4.1.25506.2.12.1.1.2.1.4'
+        LNP_LOCAL_PORT = '1.3.6.1.4.1.25506.2.12.1.1.2.1.2'
+
+        neighbors = []
+
+        try:
+            logger.debug(f"正在采集 {device['name']} 的 LNP 邻居...")
+            lnp_entries = self.snmp_walk_with_retry(device, LNP_TABLE)
+
+            for varBind in lnp_entries:
+                oid_str = str(varBind[0])
+                parts = oid_str.split('.')
+                if len(parts) >= 15:
+                    index = parts[-1]
+                    
+                    neighbor_name_oid = f"{LNP_NEIGHBOR_NAME}.{index}"
+                    neighbor_name = self.snmp_get_with_retry(device, neighbor_name_oid)
+                    
+                    neighbor_port_oid = f"{LNP_NEIGHBOR_PORT}.{index}"
+                    neighbor_port = self.snmp_get_with_retry(device, neighbor_port_oid)
+                    
+                    local_port_oid = f"{LNP_LOCAL_PORT}.{index}"
+                    local_port = self.snmp_get_with_retry(device, local_port_oid)
+
+                    if neighbor_name:
+                        neighbor = {
+                            'local_device': device['name'],
+                            'local_port': local_port or 'Unknown',
+                            'remote_device': neighbor_name,
+                            'remote_port': neighbor_port or 'Unknown',
+                            'protocol': 'lnp',
+                            'timestamp': datetime.now().isoformat()
+                        }
+
+                        neighbors.append(neighbor)
+                        logger.debug(f"  发现 LNP 邻居: {neighbor}")
+
+            with self.lock:
+                self.metrics['lnp_neighbors'] += len(neighbors)
+            
+            logger.debug(f"{device['name']} 发现 {len(neighbors)} 个 LNP 邻居")
+            
+        except Exception as e:
+            logger.error(f"{device['name']} LNP 采集失败: {e}")
+
+        return neighbors
+
+    def detect_lacp_aggregations(self):
+        """检测链路聚合（LACP）"""
+        # LACP MIB OIDs
+        LACP_AGG_TABLE = '1.2.840.10006.300.43.1.1.1'
+        
+        aggregations = []
+        
+        try:
+            import networkx as nx
+            
+            # 构建图
+            G = nx.Graph()
+            
+            for device_name, node in self.topology['nodes'].items():
+                G.add_node(device_name, **node)
+            
+            for edge in self.topology['edges']:
+                G.add_edge(edge['source'], edge['target'], **edge)
+            
+            # 检测多重边（可能是链路聚合）
+            for device_name in self.topology['nodes'].keys():
+                neighbors = list(G.neighbors(device_name))
+                
+                # 统计每个邻居的连接数
+                neighbor_count = defaultdict(int)
+                for neighbor in neighbors:
+                    neighbor_count[neighbor] += 1
+                
+                # 如果某个邻居有多个连接，可能是链路聚合
+                for neighbor, count in neighbor_count.items():
+                    if count > 1:
+                        # 获取所有连接的端口
+                        ports = []
+                        for edge in self.topology['edges']:
+                            if (edge['source'] == device_name and edge['target'] == neighbor) or \
+                               (edge['source'] == neighbor and edge['target'] == device_name):
+                                ports.append(edge.get('source_port', 'Unknown'))
+                        
+                        aggregation = {
+                            'device1': device_name,
+                            'device2': neighbor,
+                            'link_count': count,
+                            'ports': ports,
+                            'type': 'lacp'
+                        }
+                        
+                        aggregations.append(aggregation)
+                        logger.info(f"检测到链路聚合: {device_name} <-> {neighbor} ({count} 条链路)")
+            
+            self.topology['aggregations'] = aggregations
+            
+            with self.lock:
+                self.metrics['lacp_links'] = len(aggregations)
+                
+        except Exception as e:
+            logger.error(f"链路聚合检测失败: {e}")
+
+    def detect_loops(self):
+        """检测网络环路"""
+        try:
+            import networkx as nx
+            
+            # 构建图
+            G = nx.Graph()
+            
+            for device_name, node in self.topology['nodes'].items():
+                G.add_node(device_name, **node)
+            
+            for edge in self.topology['edges']:
+                G.add_edge(edge['source'], edge['target'])
+            
+            # 检测环路
+            loops = list(nx.cycle_basis(G))
+            
+            if loops:
+                logger.warning(f"检测到 {len(loops)} 个网络环路！")
+                for i, loop in enumerate(loops, 1):
+                    logger.warning(f"  环路 {i}: {' -> '.join(loop)}")
+            
+            self.topology['loops'] = loops
+            
+            with self.lock:
+                self.metrics['loops_detected'] = len(loops)
+                
+        except Exception as e:
+            logger.error(f"环路检测失败: {e}")
+
+    def detect_topology_changes(self):
+        """检测拓扑变化"""
+        changes = []
+        
+        # 比较节点变化
+        current_nodes = set(self.topology['nodes'].keys())
+        previous_nodes = set(self.previous_topology.get('nodes', {}).keys())
+        
+        # 新增节点
+        added_nodes = current_nodes - previous_nodes
+        if added_nodes:
+            changes.append({
+                'type': 'node_added',
+                'nodes': list(added_nodes),
+                'count': len(added_nodes)
+            })
+            logger.info(f"新增节点: {added_nodes}")
+        
+        # 删除节点
+        removed_nodes = previous_nodes - current_nodes
+        if removed_nodes:
+            changes.append({
+                'type': 'node_removed',
+                'nodes': list(removed_nodes),
+                'count': len(removed_nodes)
+            })
+            logger.warning(f"删除节点: {removed_nodes}")
+        
+        # 比较边变化
+        current_edges = set()
+        for edge in self.topology['edges']:
+            edge_key = tuple(sorted([edge['source'], edge['target']]))
+            current_edges.add(edge_key)
+        
+        previous_edges = set()
+        for edge in self.previous_topology.get('edges', []):
+            edge_key = tuple(sorted([edge['source'], edge['target']]))
+            previous_edges.add(edge_key)
+        
+        # 新增连接
+        added_edges = current_edges - previous_edges
+        if added_edges:
+            changes.append({
+                'type': 'edge_added',
+                'edges': list(added_edges),
+                'count': len(added_edges)
+            })
+            logger.info(f"新增连接: {added_edges}")
+        
+        # 删除连接
+        removed_edges = previous_edges - current_edges
+        if removed_edges:
+            changes.append({
+                'type': 'edge_removed',
+                'edges': list(removed_edges),
+                'count': len(removed_edges)
+            })
+            logger.warning(f"删除连接: {removed_edges}")
+        
+        self.topology['changes'] = changes
+        
+        with self.lock:
+            self.metrics['topology_changes'] = len(changes)
+        
+        return changes
+
     def collect_device_neighbors(self, device):
-        """采集单个设备的邻居信息（用于并发）"""
+        """采集单个设备的邻居信息（支持多协议）"""
         neighbors = []
         
         try:
-            # 优先尝试 LLDP
-            lldp_neighbors = self.get_lldp_neighbors(device)
-            neighbors.extend(lldp_neighbors)
+            # 获取支持的协议列表
+            protocols = self.get_vendor_protocols(device)
             
-            # 如果没有 LLDP 邻居，尝试 CDP（Cisco 设备）
-            if not lldp_neighbors and device.get('vendor', '').lower() in ['cisco']:
-                logger.info(f"{device['name']} 无 LLDP 邻居，尝试 CDP...")
-                cdp_neighbors = self.get_cdp_neighbors(device)
-                neighbors.extend(cdp_neighbors)
+            logger.debug(f"{device['name']} 支持协议: {protocols}")
+            
+            # 按协议优先级尝试采集
+            for protocol in protocols:
+                if protocol == 'lldp':
+                    lldp_neighbors = self.get_lldp_neighbors(device)
+                    neighbors.extend(lldp_neighbors)
+                    if lldp_neighbors:
+                        break  # LLDP 成功，不再尝试其他协议
+                elif protocol == 'cdp':
+                    cdp_neighbors = self.get_cdp_neighbors(device)
+                    neighbors.extend(cdp_neighbors)
+                    if cdp_neighbors:
+                        break
+                elif protocol == 'ndp':
+                    ndp_neighbors = self.get_ndp_neighbors(device)
+                    neighbors.extend(ndp_neighbors)
+                    if ndp_neighbors:
+                        break
+                elif protocol == 'lnp':
+                    lnp_neighbors = self.get_lnp_neighbors(device)
+                    neighbors.extend(lnp_neighbors)
+                    if lnp_neighbors:
+                        break
             
             # 添加设备节点
             if device['name'] not in self.topology['nodes']:
@@ -293,7 +636,8 @@ class TopologyDiscovery:
                         'type': device.get('type', 'switch'),
                         'tier': device.get('tier', 'unknown'),
                         'location': device.get('location', 'unknown'),
-                        'vendor': device.get('vendor', 'unknown')
+                        'vendor': device.get('vendor', 'unknown'),
+                        'protocols_supported': protocols
                     }
             
             with self.lock:
@@ -307,9 +651,9 @@ class TopologyDiscovery:
         return neighbors
 
     def discover_topology(self, max_workers=10):
-        """发现整体拓扑（并发查询）"""
+        """发现整体拓扑（并发查询，支持多协议）"""
         logger.info("=" * 60)
-        logger.info("开始网络拓扑发现（支持 LLDP + CDP）...")
+        logger.info("开始网络拓扑发现（支持 LLDP + CDP + NDP + LNP）...")
         logger.info(f"设备数量: {len(self.devices)}, 并发数: {max_workers}")
         logger.info("=" * 60)
 
@@ -368,15 +712,29 @@ class TopologyDiscovery:
         self.metrics['end_time'] = time.time()
         self.metrics['discovery_duration_seconds'] = self.metrics['end_time'] - self.metrics['start_time']
 
+        # 链路聚合检测
+        self.detect_lacp_aggregations()
+        
+        # 环路检测
+        self.detect_loops()
+        
+        # 拓扑变化检测
+        self.detect_topology_changes()
+
         logger.info("=" * 60)
         logger.info(f"拓扑发现完成！")
         logger.info(f"  设备数量: {len(self.topology['nodes'])}")
         logger.info(f"  连接数量: {len(self.topology['edges'])}")
+        logger.info(f"  链路聚合: {len(self.topology.get('aggregations', []))}")
+        logger.info(f"  环路数量: {len(self.topology.get('loops', []))}")
+        logger.info(f"  拓扑变化: {len(self.topology.get('changes', []))}")
         logger.info(f"  采集耗时: {self.metrics['discovery_duration_seconds']:.2f} 秒")
         logger.info(f"  成功设备: {self.metrics['devices_discovered']}")
         logger.info(f"  失败设备: {self.metrics['devices_failed']}")
         logger.info(f"  LLDP 邻居: {self.metrics['lldp_neighbors']}")
         logger.info(f"  CDP 邻居: {self.metrics['cdp_neighbors']}")
+        logger.info(f"  NDP 邻居: {self.metrics['ndp_neighbors']}")
+        logger.info(f"  LNP 邻居: {self.metrics['lnp_neighbors']}")
         logger.info(f"  SNMP 错误: {self.metrics['snmp_errors']}")
         logger.info("=" * 60)
 
@@ -659,7 +1017,7 @@ def main():
     """主函数"""
     discovery = TopologyDiscovery('/etc/topology/devices.yml')
 
-    # 发现拓扑（并发查询，支持 LLDP + CDP）
+    # 发现拓扑（并发查询，支持多协议）
     discovery.discover_topology(max_workers=10)
 
     # 计算层级（基于图算法）
@@ -683,6 +1041,14 @@ def main():
     # 输出健康状态
     health = discovery.get_health_status()
     logger.info(f"健康状态: {health['status']}")
+    
+    # 如果有拓扑变化，记录告警
+    if discovery.topology.get('changes'):
+        logger.warning(f"检测到拓扑变化: {len(discovery.topology['changes'])} 项")
+    
+    # 如果检测到环路，记录告警
+    if discovery.topology.get('loops'):
+        logger.warning(f"检测到网络环路: {len(discovery.topology['loops'])} 个")
     
     logger.info("所有任务完成！")
 

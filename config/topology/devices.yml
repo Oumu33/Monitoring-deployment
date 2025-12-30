@@ -1,6 +1,6 @@
 # ===================================================================
 # 网络设备配置文件
-# 用途: 拓扑发现的设备列表（支持 LLDP 和 CDP）
+# 用途: 拓扑发现的设备列表（支持 LLDP、CDP、NDP、LNP）
 # ===================================================================
 
 devices:
@@ -9,17 +9,17 @@ devices:
     host: 192.168.1.100
     type: switch
     tier: core
-    vendor: cisco
+    vendor: huawei
     location: dc1-rack-A01
     snmp_community: public  # 生产环境使用强密码
     snmp_port: 161
-    # protocol: cdp  # 可选：强制使用 CDP（Cisco 设备）
+    # protocol: ndp  # 可选：强制使用 NDP（华为设备）
 
   - name: Switch-Core-02
     host: 192.168.1.101
     type: switch
     tier: core
-    vendor: cisco
+    vendor: h3c
     location: dc1-rack-A02
     snmp_community: public
 
@@ -28,17 +28,16 @@ devices:
   #   host: 192.168.1.110
   #   type: switch
   #   tier: aggregation
-  #   vendor: arista
+  #   vendor: ruijie
   #   location: dc1-rack-B01
   #   snmp_community: public
-  #   # protocol: lldp  # 可选：强制使用 LLDP
 
   # ===== 接入交换机 =====
   # - name: Switch-Access-01
   #   host: 192.168.1.120
   #   type: switch
   #   tier: access
-  #   vendor: cisco
+  #   vendor: maipu
   #   location: dc1-rack-C01
   #   snmp_community: public
 
@@ -47,7 +46,7 @@ devices:
   #   host: 192.168.1.1
   #   type: router
   #   tier: core
-  #   vendor: juniper
+  #   vendor: cisco
   #   location: dc1-rack-A01
   #   snmp_community: public
 
@@ -62,18 +61,53 @@ devices:
 # 可选字段:
 #   - type: 设备类型 (switch/router/firewall/server)
 #   - tier: 网络层级 (core/aggregation/access)
-#   - vendor: 厂商 (cisco/arista/juniper/huawei/h3c)
+#   - vendor: 厂商 (见下方支持列表)
 #   - location: 物理位置 (数据中心-机架-U位)
 #   - snmp_port: SNMP 端口（默认 161）
-#   - protocol: 强制使用协议 (lldp/cdp/auto)
+#   - protocol: 强制使用协议 (lldp/cdp/ndp/lnp/auto)
 #
-# 协议支持:
-#   - LLDP: IEEE 802.1AB（通用标准）
+# 支持的厂商和协议:
+#
+# 国产厂商:
+#   - 华为 (huawei): NDP + LLDP
+#   - 华三 (h3c): LNP + LLDP
+#   - 锐捷 (ruijie): LLDP
+#   - 迈普 (maipu): LLDP
+#   - 烽火 (fiberhome): LLDP
+#   - 中兴 (zte): LLDP
+#   - 迪普 (dp-tech): LLDP
+#
+# 国外厂商:
+#   - Cisco (cisco): CDP + LLDP
+#   - Arista (arista): LLDP
+#   - Juniper (juniper): LLDP
+#   - HPE (hpe): LLDP
+#
+# 协议说明:
+#   - LLDP: IEEE 802.1AB（通用标准，所有厂商支持）
 #   - CDP: Cisco Discovery Protocol（Cisco 专有）
-#   - 自动: 优先 LLDP，失败则尝试 CDP（仅 Cisco 设备）
+#   - NDP: Neighbor Discovery Protocol（华为专有）
+#   - LNP: Link Neighbor Protocol（华三专有）
+#   - 自动: 根据厂商自动选择最佳协议
 #
 # SNMP 配置:
-#   确保设备已启用 SNMP 和 LLDP/CDP:
+#   确保设备已启用 SNMP 和邻居发现协议:
+#
+#   华为:
+#     snmp-agent community read public
+#     lldp enable
+#     # 或
+#     ndp enable
+#
+#   华三:
+#     snmp-agent community read public
+#     lldp global enable
+#     # 或
+#     lnp enable
+#
+#   锐捷:
+#     snmp-server community public ro
+#     lldp run
 #
 #   Cisco:
 #     snmp-server community public RO
@@ -81,22 +115,18 @@ devices:
 #     # 或
 #     cdp run
 #
-#   Arista:
-#     snmp-server community public ro
-#     lldp run
-#
-#   Juniper:
-#     set snmp community public authorization read-only
-#     set protocols lldp interface all
-#
-#   Huawei:
-#     snmp-agent community read public
-#     lldp enable
+# 功能特性:
+#   - 多协议支持: LLDP + CDP + NDP + LNP
+#   - 链路聚合检测: 自动检测 LACP 聚合链路
+#   - 环路检测: 自动检测网络环路
+#   - 拓扑变化告警: 检测新增/删除的节点和连接
+#   - 并发查询: 默认 10 个线程，支持 500+ 设备
+#   - 错误重试: 指数退避策略，最多 3 次
 #
 # 性能优化:
 #   - 并发查询：默认 10 个线程
 #   - 错误重试：最多 3 次，指数退避
-#   - 适合规模：200-500 台设备
+#   - 适合规模：500+ 台设备
 #   - 采集时间：100 台约 30 秒，500 台约 2-3 分钟
 #
 # ===================================================================

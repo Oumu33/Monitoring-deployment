@@ -147,9 +147,34 @@ class TopologyExporter:
         metrics.append(f"topology_cdp_neighbors {self.discovery_metrics.get('cdp_neighbors', 0)}")
 
         metrics.append("")
+        metrics.append("# HELP topology_ndp_neighbors Total NDP neighbors")
+        metrics.append("# TYPE topology_ndp_neighbors gauge")
+        metrics.append(f"topology_ndp_neighbors {self.discovery_metrics.get('ndp_neighbors', 0)}")
+
+        metrics.append("")
+        metrics.append("# HELP topology_lnp_neighbors Total LNP neighbors")
+        metrics.append("# TYPE topology_lnp_neighbors gauge")
+        metrics.append(f"topology_lnp_neighbors {self.discovery_metrics.get('lnp_neighbors', 0)}")
+
+        metrics.append("")
         metrics.append("# HELP topology_snmp_errors Total SNMP errors")
         metrics.append("# TYPE topology_snmp_errors counter")
         metrics.append(f"topology_snmp_errors {self.discovery_metrics.get('snmp_errors', 0)}")
+
+        metrics.append("")
+        metrics.append("# HELP topology_lacp_links Total LACP aggregation links")
+        metrics.append("# TYPE topology_lacp_links gauge")
+        metrics.append(f"topology_lacp_links {self.discovery_metrics.get('lacp_links', 0)}")
+
+        metrics.append("")
+        metrics.append("# HELP topology_loops_detected Total network loops detected")
+        metrics.append("# TYPE topology_loops_detected gauge")
+        metrics.append(f"topology_loops_detected {self.discovery_metrics.get('loops_detected', 0)}")
+
+        metrics.append("")
+        metrics.append("# HELP topology_topology_changes Total topology changes detected")
+        metrics.append("# TYPE topology_topology_changes gauge")
+        metrics.append(f"topology_topology_changes {self.discovery_metrics.get('topology_changes', 0)}")
 
         # 计算成功率
         total = self.discovery_metrics.get('devices_discovered', 0) + self.discovery_metrics.get('devices_failed', 0)
