@@ -1,4 +1,4 @@
-# 🚀 Enterprise Infrastructure Observability Platform
+# 🚀 企业基础设施可观测性平台
 
 <div align="center">
 
@@ -7,17 +7,17 @@
 [![VictoriaMetrics](https://img.shields.io/badge/VictoriaMetrics-latest-green.svg)](https://victoriametrics.com/)
 [![Grafana](https://img.shields.io/badge/Grafana-11.0%2B-orange.svg)](https://grafana.com/)
 
-**Production-Grade Enterprise Infrastructure Observability Platform**
+**生产级企业基础设施可观测性平台**
 
-*Metrics + Logs + Topology | AI-driven Root Cause Analysis | Zero-Config Topology Discovery*
+*指标 + 日志 + 拓扑 | 智能根因分析 | 零配置拓扑发现*
 
-[Quick Start](#-quick-start) • [Core Features](#-core-features) • [Architecture](#-architecture) • [Documentation](#-documentation)
+[English](README_EN.md) • [快速开始](#-quick-start) • [核心特性](#-core-features) • [架构设计](#-architecture) • [完整文档](#-documentation)
 
 </div>
 
 ---
 
-## 📊 Platform Overview
+## 📊 平台概览
 
 <table>
 <tr>
@@ -28,86 +28,82 @@
 </tr>
 </table>
 
-### ✨ Core Value
+### ✨ 核心价值
 
 ```diff
-- Traditional Monitoring: Core switch failure → 20 alert emails → 30 min manual investigation
-+ Intelligent Platform: Auto root cause analysis → 1 precise alert → Auto location < 1 min
+- 传统监控：核心交换机故障 → 20 封告警邮件 → 人工排查 30 分钟
++ 智能平台：自动根因分析 → 1 封精准告警 → 自动定位 < 1 分钟
 
+效果：告警数量 ↓95% | 故障定位时间 ↓97% | 运维成本 ↓80%
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
 这是一个**生产就绪**的企业级基础设施可观测性平台，基于 **VictoriaMetrics** 构建，专为混合基础设施环境设计。
 
-### 🌟 Why Choose This Platform?
+### 🌟 为什么选择本平台？
 
 <table>
 <tr>
-<th width="25%">Comparison Dimension<br/>对比维度</th>
-<th width="25%">Commercial Solution<br/>商业方案 (Datadog/Dynatrace)</th>
-<th width="25%">Traditional Open Source<br/>传统开源 (Prometheus)</th>
-<th width="25%">This Platform ⭐<br/>本平台</th>
+<th width="25%">对比维度</th>
+<th width="25%">商业方案 (Datadog/Dynatrace)</th>
+<th width="25%">传统开源 (Prometheus)</th>
+<th width="25%">本平台 ⭐</th>
 </tr>
 <tr>
-<td><b>Deployment Time<br/>部署时间</b></td>
-<td>2-4 weeks (training required)</td>
-<td>1-2 weeks (heavy configuration)</td>
-<td><b>5 minutes</b> (out-of-the-box)</td>
+<td><b>部署时间</b></td>
+<td>2-4 周（需培训）</td>
+<td>1-2 周（需大量配置）</td>
+<td><b>5 分钟</b>（开箱即用）</td>
 </tr>
 <tr>
-<td><b>Annual Cost<br/>年度成本</b></td>
+<td><b>年度成本</b></td>
 <td>$50K-$200K+</td>
-<td>Free (high labor cost)</td>
-<td><b>Free</b> (low maintenance)</td>
+<td>免费（高人力成本）</td>
+<td><b>免费</b>（低维护）</td>
 </tr>
 <tr>
-<td><b>Root Cause Analysis<br/>根因分析</b></td>
-<td>✅ AI-driven</td>
-<td>❌ Manual configuration</td>
-<td>✅ <b>Topology Intelligence</b></td>
+<td><b>根因分析</b></td>
+<td>✅ AI 驱动</td>
+<td>❌ 需手动配置</td>
+<td>✅ <b>拓扑智能分析</b></td>
 </tr>
 <tr>
-<td><b>Topology Discovery<br/>拓扑发现</b></td>
-<td>✅ Automatic (black-box)</td>
-<td>❌ Not supported</td>
-<td>✅ <b>LLDP Auto + Visualization</b></td>
+<td><b>拓扑发现</b></td>
+<td>✅ 自动（黑盒）</td>
+<td>❌ 不支持</td>
+<td>✅ <b>LLDP 自动 + 可视化</b></td>
 </tr>
 <tr>
-<td><b>Performance<br/>性能</b></td>
-<td>Cloud processing</td>
-<td>Single node 50 devices</td>
-<td><b>100+ devices</b> (7x compression)</td>
+<td><b>性能</b></td>
+<td>云端处理</td>
+<td>单节点 50 设备</td>
+<td><b>100+ 设备</b>（7x 压缩）</td>
 </tr>
 <tr>
-<td><b>Data Sovereignty<br/>数据主权</b></td>
-<td>❌ Cloud storage</td>
-<td>✅ On-premise</td>
-<td>✅ <b>Full Control</b></td>
+<td><b>数据主权</b></td>
+<td>❌ 云端存储</td>
+<td>✅ 本地</td>
+<td>✅ <b>完全自主</b></td>
 </tr>
 </table>
 
-### 🎯 Use Cases
+### 🎯 适用场景
 
-| Scenario | Scale | Description |
 | 场景 | 规模 | 说明 |
 |------|------|------|
-| **Hybrid Infrastructure** | 50-500 devices | Linux + VMware + Network + Physical Servers |
 | **混合基础设施** | 50-500 设备 | Linux + VMware + 网络设备 + 物理服务器 |
-| **Multi-Datacenter** | 3-10 DCs | Unified monitoring + Distributed collection |
 | **多数据中心** | 3-10 个 DC | 统一监控 + 分布式采集 |
-| **DevOps Team** | 5-20 people | Quick deployment, low learning curve, automation |
 | **DevOps 团队** | 5-20 人 | 快速部署、低学习成本、自动化 |
-| **Enterprise Production** | 7×24 availability | HA deployment, complete alerting, SLA guarantee |
 | **企业级生产** | 7×24 可用 | HA 部署、完整告警、SLA 保障 |
 
 ---
 
-## ✨ Core Features
+## ✨ 核心特性
 
-### 🧠 1. Intelligent Root Cause Analysis (Industry Leading)
+### 🧠 1. 智能根因分析（业界领先）
 
 **问题场景**：
 ```
@@ -308,7 +304,7 @@ Alertmanager 应用 20+ 智能抑制规则
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ 架构设计
 
 ### 完整数据流
 
@@ -388,7 +384,7 @@ Alertmanager 应用 20+ 智能抑制规则
 
 ---
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
 ### 前置要求
 
@@ -606,9 +602,9 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 
 ---
 
-## 📊 Monitoring Coverage
+## 📊 监控覆盖范围
 
-### Pre-configured Alert Rules (50+)
+### 预置告警规则（50+）
 
 | 类别 | 规则数 | 示例 | 严重程度 |
 |------|-------|------|---------|
@@ -684,9 +680,9 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 
 ---
 
-## 🗺️ Topology Discovery
+## 🗺️ 拓扑自动发现
 
-### Complete Workflow
+### 完整工作流程
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -750,9 +746,9 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 
 ---
 
-## 📝 Logs Aggregation
+## 📝 日志聚合
 
-### Metrics + Logs Correlation
+### 指标 + 日志联动查询
 
 **场景：服务器网络延迟突增**
 
@@ -783,7 +779,7 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 
 ---
 
-## 📚 Documentation
+## 📚 完整文档
 
 ### 📖 核心文档
 
@@ -814,9 +810,9 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 
 ---
 
-## 🛠️ Operations
+## 🛠️ 运维操作
 
-### Daily Operations Commands
+### 日常运维命令
 
 ```bash
 # ========== 服务管理 ==========
@@ -942,9 +938,9 @@ docker-compose up -d
 
 ---
 
-## 📈 Performance & Scale
+## 📈 性能与扩展
 
-### Performance Metrics
+### 性能指标
 
 | 指标 | 单节点 | 集群模式 | 说明 |
 |------|-------|---------|------|
@@ -1027,9 +1023,9 @@ vmagent --remoteWrite.label=datacenter=dc1
 
 ---
 
-## 🤝 Contributing
+## 🤝 贡献指南
 
-We welcome all forms of contributions! Whether reporting bugs, suggesting features, improving documentation, or submitting code.
+我们欢迎所有形式的贡献！无论是报告 Bug、提出功能建议、改进文档还是提交代码。
 
 ### 快速贡献
 
@@ -1098,9 +1094,9 @@ Closes #123
 
 ---
 
-## 🙏 Acknowledgments
+## 🙏 致谢
 
-This project is built upon the following excellent open source projects:
+本项目基于以下优秀的开源项目构建：
 
 <table>
 <tr>
@@ -1139,9 +1135,9 @@ in the Software without restriction...
 
 ---
 
-## 💬 Community & Support
+## 💬 社区与支持
 
-### Getting Help
+### 获取帮助
 
 | 渠道 | 适用场景 | 响应时间 |
 |------|---------|---------|
@@ -1155,7 +1151,7 @@ in the Software without restriction...
 - ✅ 是否搜索了已存在的 Issues
 - ✅ 是否提供了完整的错误信息和日志
 
-### Roadmap
+### 发展路线
 
 - [ ] **Web UI 配置界面** - 替代手动编辑配置文件
 - [ ] **自动化部署脚本** - Ansible/Terraform 支持
@@ -1186,6 +1182,6 @@ docker-compose up -d
 
 Made with ❤️ by the Open Source Community
 
-[⬆ 返回顶部](#-enterprise-infrastructure-observability-platform)
+[⬆ 返回顶部](#-企业基础设施可观测性平台)
 
 </div>
