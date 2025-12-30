@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # Loki - 日志聚合存储（日志组件，可选）
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./config/loki/loki.yml:/etc/loki/local-config.yaml
+      - lokidata:/loki
+    command:
+      - "-config.file=/etc/loki/local-config.yaml"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # Promtail - 日志采集（日志组件，可选）
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    depends_on:
+      - loki
+    volumes:
+      - ./config/promtail/promtail.yml:/etc/promtail/config.yml
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command:
+      - "-config.file=/etc/promtail/config.yml"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # Syslog-NG - 网络设备日志采集（日志组件，可选）
+  syslog-ng:
+    image: balabit/syslog-ng:latest
+    container_name: syslog-ng
+    depends_on:
+      - loki
+    ports:
+      - "514:514/udp"
+      - "514:514/tcp"
+      - "601:601/tcp"
+    volumes:
+      - ./config/syslog-ng/syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf
+    command:
+      - "-f /etc/syslog-ng/syslog-ng.conf"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+volumes:
+  lokidata:
+
+networks:
+  monitoring:
+    driver: bridge
+    external: true  # 使用外部网络，与其他组件共享

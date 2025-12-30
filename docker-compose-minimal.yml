@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # VictoriaMetrics - 时序数据库（核心组件，必需）
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    container_name: victoriametrics
+    ports:
+      - "8428:8428"
+    volumes:
+      - vmdata:/storage
+    command:
+      - "--storageDataPath=/storage"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=12"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # Grafana - 可视化（核心组件，必需）
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    depends_on:
+      - victoriametrics
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+volumes:
+  vmdata:
+  grafana-data:
+
+networks:
+  monitoring:
+    driver: bridge

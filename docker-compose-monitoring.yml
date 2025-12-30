@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # vmagent - 指标收集代理（监控采集，必需）
+  vmagent:
+    image: victoriametrics/vmagent:latest
+    container_name: vmagent
+    depends_on:
+      - victoriametrics
+    ports:
+      - "8429:8429"
+    volumes:
+      - ./config/vmagent/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/vmagent/targets:/etc/prometheus/targets
+      - vmagentdata:/vmagentdata
+    command:
+      - "--promscrape.config=/etc/prometheus/prometheus.yml"
+      - "--remoteWrite.url=http://victoriametrics:8428/api/v1/write"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # Node Exporter - Linux 节点监控（可选，用于监控本机）
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # vmalert - 告警规则引擎（可选，用于告警）
+  vmalert:
+    image: victoriametrics/vmalert:latest
+    container_name: vmalert
+    depends_on:
+      - victoriametrics
+      - alertmanager
+    ports:
+      - "8880:8880"
+    volumes:
+      - ./config/vmagent/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/vmagent/targets:/etc/prometheus/targets
+      - vmagentdata:/vmagentdata
+    command:
+      - "--datasource.url=http://victoriametrics:8428"
+      - "--remoteRead.url=http://victoriametrics:8428"
+      - "--remoteWrite.url=http://victoriametrics:8428"
+      - "--notifier.url=http://alertmanager:9093"
+      - "--rule=/etc/alerts/*.yml"
+      - "--rule=/etc/recording-rules/*.yml"
+      - "--httpListenAddr=:8880"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # Alertmanager - 告警管理（可选，用于告警通知）
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager-data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+volumes:
+  vmagentdata:
+  alertmanager-data:
+
+networks:
+  monitoring:
+    driver: bridge
+    external: true  # 使用外部网络，与 minimal 共享

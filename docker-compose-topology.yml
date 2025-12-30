@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # Topology Discovery - 拓扑自动发现（拓扑组件，可选）
+  topology-discovery:
+    image: python:3.9-slim
+    container_name: topology-discovery
+    volumes:
+      - ./config/topology/devices.yml:/etc/topology/devices.yml
+      - ./scripts/topology:/app
+      - ./data/topology:/data/topology
+    working_dir: /app
+    command:
+      - "python3"
+      - "lldp_discovery.py"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # Topology Exporter - 拓扑指标导出（拓扑组件，可选）
+  topology-exporter:
+    image: python:3.9-slim
+    container_name: topology-exporter
+    depends_on:
+      - topology-discovery
+    ports:
+      - "9700:9700"
+    volumes:
+      - ./scripts/topology:/app
+      - ./data/topology:/data/topology
+    working_dir: /app
+    command:
+      - "python3"
+      - "topology_exporter.py"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge
+    external: true  # 使用外部网络，与其他组件共享

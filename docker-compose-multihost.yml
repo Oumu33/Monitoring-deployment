@@ -1,0 +1,278 @@
+# ===================================================================
+# 多主机部署配置示例
+# 用途：展示如何在多台主机上部署组件，以及配置指向问题
+# ===================================================================
+
+# 场景：3 台主机
+#   - Server-1 (192.168.1.10): VictoriaMetrics + Grafana（核心组件）
+#   - Server-2 (192.168.1.20): vmagent + Node Exporter（监控采集）
+#   - Server-3 (192.168.1.30): Loki + Promtail（日志组件）
+
+# ===================================================================
+# Server-1 (192.168.1.10) - 核心组件
+# ===================================================================
+# 文件: server-1/docker-compose.yml
+
+version: '3.8'
+
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    container_name: victoriametrics
+    ports:
+      - "8428:8428"
+    volumes:
+      - vmdata:/storage
+    command:
+      - "--storageDataPath=/storage"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=12"
+      - "--httpListenAddr=0.0.0.0:8428"  # 监听所有网卡，允许其他主机访问
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    depends_on:
+      - victoriametrics
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+volumes:
+  vmdata:
+  grafana-data:
+
+networks:
+  monitoring:
+    driver: bridge
+
+# ===================================================================
+# Server-2 (192.168.1.20) - 监控采集组件
+# ===================================================================
+# 文件: server-2/docker-compose.yml
+
+version: '3.8'
+
+services:
+  vmagent:
+    image: victoriametrics/vmagent:latest
+    container_name: vmagent
+    ports:
+      - "8429:8429"
+    volumes:
+      - ./config/vmagent/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/vmagent/targets:/etc/prometheus/targets
+      - vmagentdata:/vmagentdata
+    command:
+      - "--promscrape.config=/etc/prometheus/prometheus.yml"
+      # 🔑 关键配置：指向 Server-1 的 VictoriaMetrics
+      - "--remoteWrite.url=http://192.168.1.10:8428/api/v1/write"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+volumes:
+  vmagentdata:
+
+networks:
+  monitoring:
+    driver: bridge
+
+# ===================================================================
+# Server-3 (192.168.1.30) - 日志组件
+# ===================================================================
+# 文件: server-3/docker-compose.yml
+
+version: '3.8'
+
+services:
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./config/loki/loki.yml:/etc/loki/local-config.yaml
+      - lokidata:/loki
+    command:
+      - "-config.file=/etc/loki/local-config.yaml"
+      - "--httpListenAddr=0.0.0.0:3100"  # 监听所有网卡
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    depends_on:
+      - loki
+    volumes:
+      - ./config/promtail/promtail.yml:/etc/promtail/config.yml
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command:
+      - "-config.file=/etc/promtail/config.yml"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+volumes:
+  lokidata:
+
+networks:
+  monitoring:
+    driver: bridge
+
+# ===================================================================
+# 配置文件示例
+# ===================================================================
+
+# Server-2 的 vmagent 配置 (config/vmagent/prometheus.yml)
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+scrape_configs:
+  # Node Exporter - 本机
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['192.168.1.20:9100']  # 使用本机 IP，不要用 localhost
+        labels:
+          instance: 'server-2'
+          env: 'production'
+
+  # 远程服务器监控
+  - job_name: 'remote-servers'
+    static_configs:
+      - targets: ['192.168.1.100:9100', '192.168.1.101:9100']  # 使用实际 IP
+        labels:
+          env: 'production'
+
+# Server-2 的 Promtail 配置 (config/promtail/promtail.yml)
+server:
+  http_listen_port: 9080
+
+clients:
+  # 🔑 关键配置：指向 Server-3 的 Loki
+  - url: http://192.168.1.30:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: syslog
+    syslog:
+      listen_address: 0.0.0.0:1514
+      labels:
+        job: "syslog"
+        __path__: /var/log/**/*.log
+
+# Server-1 的 Grafana 配置 (config/grafana/provisioning/datasources/victoriametrics.yml)
+apiVersion: 1
+
+datasources:
+  - name: VictoriaMetrics
+    type: prometheus
+    access: proxy
+    url: http://victoriametrics:8428
+    isDefault: true
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://192.168.1.30:3100  # 🔑 关键配置：指向 Server-3 的 Loki
+
+# ===================================================================
+# 部署步骤
+# ===================================================================
+
+# 1. 在 Server-1 上启动核心组件
+cd server-1
+docker-compose up -d
+
+# 2. 在 Server-2 上启动监控采集组件
+cd server-2
+docker-compose up -d
+
+# 3. 在 Server-3 上启动日志组件
+cd server-3
+docker-compose up -d
+
+# 4. 验证连接
+# 在 Server-2 上测试连接到 Server-1
+curl http://192.168.1.10:8428/health
+
+# 在 Server-3 上测试连接到 Server-1
+curl http://192.168.1.10:8428/health
+
+# 5. 访问 Grafana
+# http://192.168.1.10:3000
+
+# ===================================================================
+# 配置指向说明
+# ===================================================================
+
+# 1. 容器名 vs IP 地址
+#    - 单机部署：使用容器名（如 victoriametrics:8428）
+#    - 多机部署：使用 IP 地址（如 192.168.1.10:8428）
+
+# 2. 监听地址配置
+#    - 默认：只监听 localhost（127.0.0.1）
+#    - 多机部署：需要监听 0.0.0.0（所有网卡）
+#    - 示例：--httpListenAddr=0.0.0.0:8428
+
+# 3. 网络配置
+#    - 确保主机之间网络互通
+#    - 检查防火墙规则
+#    - 使用 ping 或 telnet 测试连通性
+
+# 4. 环境变量配置
+#    - 可以使用 .env 文件配置 IP 地址
+#    - 示例：VM_SERVER_IP=192.168.1.10
+#    - 在 docker-compose.yml 中引用：${VM_SERVER_IP}
+
+# ===================================================================
+# 网络配置示例
+# ===================================================================
+
+# 使用 .env 文件配置 IP 地址
+# 文件: .env.multihost
+
+# Server-1 配置
+VM_SERVER_IP=192.168.1.10
+LOKI_SERVER_IP=192.168.1.30
+
+# 在 docker-compose.yml 中使用引用
+# vmagent:
+#   command:
+#     - "--remoteWrite.url=http://${VM_SERVER_IP}:8428/api/v1/write"
+
+# ===================================================================
