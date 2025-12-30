@@ -1,5 +1,4 @@
 # 🚀 Enterprise Infrastructure Observability Platform
-<div align="center">企业基础设施可观测性平台</div>
 
 <div align="center">
 
@@ -9,20 +8,16 @@
 [![Grafana](https://img.shields.io/badge/Grafana-11.0%2B-orange.svg)](https://grafana.com/)
 
 **Production-Grade Enterprise Infrastructure Observability Platform**
-<div align="center">生产级企业基础设施可观测性平台</div>
 
 *Metrics + Logs + Topology | AI-driven Root Cause Analysis | Zero-Config Topology Discovery*
-<div align="center">指标 + 日志 + 拓扑 | 智能根因分析 | 零配置拓扑发现</div>
 
 [Quick Start](#-quick-start) • [Core Features](#-core-features) • [Architecture](#-architecture) • [Documentation](#-documentation)
-<div align="center">快速开始 • 核心特性 • 架构设计 • 完整文档</div>
 
 </div>
 
 ---
 
 ## 📊 Platform Overview
-<div align="center">平台概览</div>
 
 <table>
 <tr>
@@ -34,24 +29,20 @@
 </table>
 
 ### ✨ Core Value
-<div align="center">核心价值</div>
 
 ```diff
 - Traditional Monitoring: Core switch failure → 20 alert emails → 30 min manual investigation
 + Intelligent Platform: Auto root cause analysis → 1 precise alert → Auto location < 1 min
 
-<div align="center">效果：告警数量 ↓95% | 故障定位时间 ↓97% | 运维成本 ↓80%</div>
 ```
 
 ---
 
 ## 🚀 Quick Start
-<div align="center">快速开始</div>
 
 这是一个**生产就绪**的企业级基础设施可观测性平台，基于 **VictoriaMetrics** 构建，专为混合基础设施环境设计。
 
 ### 🌟 Why Choose This Platform?
-<div align="center">为什么选择本平台？</div>
 
 <table>
 <tr>
@@ -99,7 +90,6 @@
 </table>
 
 ### 🎯 Use Cases
-<div align="center">适用场景</div>
 
 | Scenario | Scale | Description |
 | 场景 | 规模 | 说明 |
@@ -116,10 +106,8 @@
 ---
 
 ## ✨ Core Features
-<div align="center">核心特性</div>
 
 ### 🧠 1. Intelligent Root Cause Analysis (Industry Leading)
-<div align="center">智能根因分析（业界领先）</div>
 
 **问题场景**：
 ```
@@ -619,10 +607,8 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 ---
 
 ## 📊 Monitoring Coverage
-<div align="center">监控覆盖范围</div>
 
 ### Pre-configured Alert Rules (50+)
-<div align="center">预置告警规则（50+）</div>
 
 | 类别 | 规则数 | 示例 | 严重程度 |
 |------|-------|------|---------|
@@ -699,10 +685,8 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 ---
 
 ## 🗺️ Topology Discovery
-<div align="center">拓扑自动发现</div>
 
 ### Complete Workflow
-<div align="center">完整工作流程</div>
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -767,10 +751,8 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 ---
 
 ## 📝 Logs Aggregation
-<div align="center">日志聚合</div>
 
 ### Metrics + Logs Correlation
-<div align="center">指标 + 日志联动查询</div>
 
 **场景：服务器网络延迟突增**
 
@@ -833,10 +815,8 @@ curl -X POST http://localhost:9093/api/v1/alerts -d '[{"labels":{"alertname":"Te
 ---
 
 ## 🛠️ Operations
-<div align="center">运维操作</div>
 
 ### Daily Operations Commands
-<div align="center">日常运维命令</div>
 
 ```bash
 # ========== 服务管理 ==========
@@ -963,10 +943,8 @@ docker-compose up -d
 ---
 
 ## 📈 Performance & Scale
-<div align="center">性能与扩展</div>
 
 ### Performance Metrics
-<div align="center">性能指标</div>
 
 | 指标 | 单节点 | 集群模式 | 说明 |
 |------|-------|---------|------|
@@ -1050,10 +1028,8 @@ vmagent --remoteWrite.label=datacenter=dc1
 ---
 
 ## 🤝 Contributing
-<div align="center">贡献指南</div>
 
 We welcome all forms of contributions! Whether reporting bugs, suggesting features, improving documentation, or submitting code.
-<div align="center">我们欢迎所有形式的贡献！无论是报告 Bug、提出功能建议、改进文档还是提交代码。</div>
 
 ### 快速贡献
 
@@ -1123,10 +1099,8 @@ Closes #123
 ---
 
 ## 🙏 Acknowledgments
-<div align="center">致谢</div>
 
 This project is built upon the following excellent open source projects:
-<div align="center">本项目基于以下优秀的开源项目构建：</div>
 
 <table>
 <tr>
@@ -1166,10 +1140,8 @@ in the Software without restriction...
 ---
 
 ## 💬 Community & Support
-<div align="center">社区与支持</div>
 
 ### Getting Help
-<div align="center">获取帮助</div>
 
 | 渠道 | 适用场景 | 响应时间 |
 |------|---------|---------|
