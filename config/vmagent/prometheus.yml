@@ -124,6 +124,30 @@ scrape_configs:
         regex: 'node_cpu_seconds_total;(irq|softirq|steal|guest.*)'
         action: drop
 
+  # 2.2 Linux 主机监控 - 文件服务发现（拓扑自动发现）
+  # 从 LLDP 拓扑发现自动生成的服务器列表
+  - job_name: 'node-topology'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+    file_sd_configs:
+      - files:
+        # 读取 LLDP 拓扑发现生成的服务器列表
+        - /etc/prometheus/targets/topology-servers.json
+        refresh_interval: 60s          # 每分钟刷新拓扑标签
+
+    # 指标过滤（同上）
+    metric_relabel_configs:
+      - source_labels: [__name__, device]
+        regex: 'node_network_.+;(docker.*|veth.*|br-.*|lo)'
+        action: drop
+      - source_labels: [__name__, fstype]
+        regex: 'node_filesystem_.+;(tmpfs|devtmpfs|overlay|nsfs|fuse.*)'
+        action: drop
+      - source_labels: [__name__, mode]
+        regex: 'node_cpu_seconds_total;(irq|softirq|steal|guest.*)'
+        action: drop
+
   # ===== 3. 网络设备监控 (SNMP Exporter) =====
   # 用途: 监控交换机、路由器、防火墙等网络设备
   # 文档: https://github.com/prometheus/snmp_exporter
@@ -172,6 +196,46 @@ scrape_configs:
         action: drop
 
       # 删除管理接口（通常以 mgmt/Management 开头）
+      - source_labels: [ifDescr]
+        regex: '(mgmt.*|Management.*)'
+        action: drop
+
+  # 3.2 SNMP 设备监控 - 文件服务发现（拓扑自动发现）
+  # 从 LLDP 拓扑发现自动生成的设备列表
+  - job_name: 'snmp-topology'
+    scrape_interval: 30s
+    scrape_timeout: 20s
+
+    file_sd_configs:
+      - files:
+        # 读取 LLDP 拓扑发现生成的交换机列表
+        - /etc/prometheus/targets/topology-switches.json
+        # 也可以结合手动配置的文件
+        - /etc/prometheus/targets/core-switches.json
+        refresh_interval: 60s          # 每分钟刷新拓扑标签
+
+    # SNMP Exporter 特殊配置
+    metrics_path: /snmp
+    params:
+      module: [if_mib]
+
+    # Relabel 配置
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp-exporter:9116
+      # 保留 file_sd 中定义的所有标签
+      - action: labelmap
+        regex: __meta_(.+)
+
+    # 指标过滤（同上）
+    metric_relabel_configs:
+      - source_labels: [ifOperStatus]
+        regex: '2'
+        action: drop
       - source_labels: [ifDescr]
         regex: '(mgmt.*|Management.*)'
         action: drop
@@ -435,6 +499,16 @@ scrape_configs:
         labels:
           service: 'ipmi-exporter'
           component: 'hardware-monitor'
+
+  # ===== 7. Topology Exporter（拓扑指标）=====
+  - job_name: 'topology-exporter'
+    scrape_interval: 60s               # 拓扑不需要频繁采集
+    static_configs:
+      - targets: ['topology-exporter:9700']
+        labels:
+          service: 'topology-exporter'
+          category: 'monitoring'
+          component: 'topology'
 
 # ===================================================================
 # 配置说明:

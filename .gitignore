@@ -1,54 +1,233 @@
-# 环境变量文件
-.env
+# ===================================================================
+# Enterprise Infrastructure Observability Platform - .gitignore
+# ===================================================================
 
-# Docker volumes
+# ===== 敏感配置文件 =====
+# 包含密码、API 密钥等敏感信息的配置文件
+.env
+.env.local
+.env.*.local
+config/telegraf-gnmi/.env.gnmi
+config/alertmanager/secrets/
+config/**/credentials.yml
+config/**/credentials.json
+config/**/*password*.yml
+config/**/*secret*.yml
+config/redfish-exporter/redfish.yml
+**/secrets.yml
+
+# ===== Docker 数据卷 =====
+# Docker 挂载的持久化数据目录
+data/victoriametrics/
+data/grafana/
+data/loki/
+data/promtail/
+data/alertmanager/
+data/vmagent/
+grafana-data/
 volumes/
 
-# 日志文件
-*.log
-logs/
+# ===== 动态生成的拓扑数据 =====
+# LLDP 发现自动生成的文件（会在运行时创建）
+data/topology/topology.json
+data/topology/graph.json
+data/topology/telegraf-labels.json
+data/topology/*.json
+data/topology/*.txt
+config/vmagent/targets/topology-switches.json
+config/vmagent/targets/topology-servers.json
 
-# 临时文件
-*.tmp
+# 保留示例文件和目录结构
+!data/topology/.gitkeep
+!config/vmagent/targets/.gitkeep
+
+# ===== 日志文件 =====
+logs/
+*.log
+*.log.*
+data/logs/
+/var/log/network-devices/
+
+# ===== Python 缓存 =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ===== 虚拟环境 =====
+venv/
+ENV/
+env/
+.venv
+
+# ===== IDE 和编辑器 =====
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
 *.swp
 *.swo
 *~
+.*.sw[a-z]
 
-# 备份文件
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ===== 操作系统文件 =====
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+.nfs*
+
+# ===== 备份文件 =====
 backup/
 *.backup
 *.bak
+*.old
+*.orig
 
-# OS 文件
-.DS_Store
-Thumbs.db
-.directory
+# ===== 临时文件 =====
+*.tmp
+*.temp
+tmp/
+temp/
 
-# IDE 文件
-.vscode/
-.idea/
-*.iml
+# ===== Grafana =====
+data/grafana/grafana.db
+data/grafana/sessions
+data/grafana/plugins
 
-# Grafana 本地数据
-grafana-data/
+# ===== VictoriaMetrics =====
+data/vmdata/
+data/vmagentdata/
 
-# 敏感配置文件
-**/secrets.yml
-**/credentials.json
-
-# Docker Compose 覆盖文件
-docker-compose.override.yml
-
-# 测试文件
+# ===== 测试和调试 =====
 test/
+test-output/
 *.test
+coverage/
+.coverage
+.pytest_cache/
+.tox/
+.hypothesis/
+htmlcov/
 
-# 运行时数据目录
-data/topology/*.json
-data/topology/*.txt
-data/loki/
-data/promtail/
+# ===== SSL/TLS 证书（如果自动生成）=====
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+certs/
+ssl/
 
-# 敏感凭证
-.env.gnmi
-config/redfish-exporter/redfish.yml
+# 保留示例证书
+!config/ssl/example.crt
+!config/ssl/README.md
+
+# ===== 临时下载和缓存 =====
+*.tar.gz
+*.zip
+*.rar
+*.7z
+downloads/
+cache/
+
+# ===== 用户自定义配置 =====
+# 允许用户创建自己的配置而不影响 Git
+config/**/*.local.yml
+config/**/*.custom.yml
+config/**/custom/
+
+# ===== SNMP MIB 文件（可能很大）=====
+# 如果需要，可以单独下载
+mibs/
+
+# ===== Node modules（如果有前端组件）=====
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== Docker Compose 覆盖文件 =====
+# 允许本地覆盖配置
+docker-compose.override.yml
+docker-compose.*.yml
+!docker-compose.yaml
+
+# ===== 文档构建产物 =====
+docs/_build/
+site/
+
+# ===================================================================
+# 说明:
+# 1. 敏感信息（密码、密钥）永远不要提交
+# 2. 动态生成的数据（拓扑、日志）由系统自动创建
+# 3. 示例配置文件应保留（.example 后缀）
+# 4. 保留 .gitkeep 文件以保持目录结构
+# ===================================================================

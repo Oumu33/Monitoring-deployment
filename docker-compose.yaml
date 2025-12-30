@@ -47,12 +47,14 @@ services:
       - "8880:8880"
     volumes:
       - ./config/vmalert/alerts:/etc/alerts
+      - ./config/vmalert/recording-rules:/etc/recording-rules
     command:
       - "--datasource.url=http://victoriametrics:8428"
       - "--remoteRead.url=http://victoriametrics:8428"
       - "--remoteWrite.url=http://victoriametrics:8428"
       - "--notifier.url=http://alertmanager:9093"
       - "--rule=/etc/alerts/*.yml"
+      - "--rule=/etc/recording-rules/*.yml"
       - "--httpListenAddr=:8880"
     restart: unless-stopped
     networks:
@@ -135,6 +137,8 @@ services:
       - victoriametrics
     volumes:
       - ./config/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - ./scripts/topology:/scripts:ro          # 挂载标签注入脚本
+      - ./data/topology:/data/topology:ro       # 挂载拓扑数据（只读）
     restart: unless-stopped
     networks:
       - monitoring
@@ -257,6 +261,25 @@ services:
     environment:
       - DISCOVERY_INTERVAL=300  # 每 5 分钟发现一次
     command: /bin/bash /scripts/run_discovery.sh
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # Topology Exporter - 拓扑指标导出器
+  topology-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile.topology
+    container_name: topology-exporter
+    ports:
+      - "9700:9700"
+    volumes:
+      - ./data/topology:/data/topology:ro
+      - ./scripts/topology:/scripts:ro
+    environment:
+      - EXPORTER_PORT=9700
+      - TOPOLOGY_FILE=/data/topology/topology.json
+    command: python3 /scripts/topology_exporter.py
     restart: unless-stopped
     networks:
       - monitoring

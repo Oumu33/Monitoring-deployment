@@ -1,0 +1,117 @@
+groups:
+  # ===================================================================
+  # 拓扑标签注入 Recording Rules
+  # 用途：将 topology_device_info 的标签 join 到其他指标
+  # 适用场景：Telegraf 等无法使用 file_sd 的推送模式采集器
+  # ===================================================================
+
+  - name: topology-label-injection
+    interval: 60s                    # 每 60 秒评估一次
+    rules:
+      # ===== 为 VMware ESXi 主机指标添加拓扑标签 =====
+      # 通过 esxi_host 字段匹配
+      - record: vmware:esxi:cpu_usage:with_topology
+        expr: |
+          vsphere_host_cpu_usage_average
+          * on(esxi_host) group_left(device_tier, device_location, connected_switch)
+          (
+            label_replace(
+              topology_device_info,
+              "esxi_host", "$1", "device_host", "(.*)"
+            )
+          )
+
+      - record: vmware:esxi:mem_usage:with_topology
+        expr: |
+          vsphere_host_mem_usage_average
+          * on(esxi_host) group_left(device_tier, device_location, connected_switch)
+          (
+            label_replace(
+              topology_device_info,
+              "esxi_host", "$1", "device_host", "(.*)"
+            )
+          )
+
+      # ===== 为 VMware VM 指标添加拓扑标签 =====
+      # 通过 esxi_host 字段匹配到 ESXi，间接获取拓扑信息
+      - record: vmware:vm:cpu_usage:with_topology
+        expr: |
+          vsphere_vm_cpu_usage_average
+          * on(esxi_host) group_left(device_tier, device_location)
+          (
+            label_replace(
+              topology_device_info{device_type="esxi"},
+              "esxi_host", "$1", "device_host", "(.*)"
+            )
+          )
+
+      - record: vmware:vm:mem_usage:with_topology
+        expr: |
+          vsphere_vm_mem_usage_average
+          * on(esxi_host) group_left(device_tier, device_location)
+          (
+            label_replace(
+              topology_device_info{device_type="esxi"},
+              "esxi_host", "$1", "device_host", "(.*)"
+            )
+          )
+
+      # ===== 为网络设备指标添加拓扑标签 =====
+      # 通过 instance 匹配
+      - record: snmp:if_utilization:with_topology
+        expr: |
+          ifHCInOctets
+          * on(instance) group_left(device_tier, device_location, device_vendor)
+          (
+            label_replace(
+              topology_device_info{device_type=~"switch|router"},
+              "instance", "$1", "device_host", "(.*)"
+            )
+          )
+
+      # ===== 为主机指标添加拓扑标签 =====
+      # 通过 instance 匹配
+      - record: node:cpu_usage:with_topology
+        expr: |
+          (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100
+          * on(instance) group_left(device_tier, device_location, connected_switch)
+          (
+            label_replace(
+              topology_device_info{device_type=~"server|host"},
+              "instance", "$1:9100", "device_host", "(.*)"
+            )
+          )
+
+      - record: node:mem_usage:with_topology
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+          * on(instance) group_left(device_tier, device_location, connected_switch)
+          (
+            label_replace(
+              topology_device_info{device_type=~"server|host"},
+              "instance", "$1:9100", "device_host", "(.*)"
+            )
+          )
+
+  # ===================================================================
+  # 使用说明:
+  #
+  # 1. 这些 recording rules 创建新的指标，包含拓扑标签
+  # 2. 在 Grafana 中使用这些新指标进行查询
+  # 3. Alertmanager 规则也可以使用这些新指标
+  #
+  # 示例查询:
+  #   - vmware:esxi:cpu_usage:with_topology{device_tier="core"}
+  #   - node:cpu_usage:with_topology{connected_switch="SW-Core-01"}
+  #
+  # 优点:
+  #   - 不依赖采集端配置
+  #   - 通用方案，适用于所有采集方式
+  #   - 集中管理标签映射
+  #
+  # 缺点:
+  #   - 会产生新的时间序列
+  #   - 需要在查询和告警中使用新指标名
+  #   - 有轻微的计算延迟（60秒评估间隔）
+  #
+  # ===================================================================

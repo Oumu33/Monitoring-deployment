@@ -240,9 +240,11 @@ class LLDPDiscovery:
         except Exception as e:
             logger.error(f"保存拓扑数据失败: {e}")
 
-    def generate_prometheus_labels(self, output_file='/data/topology/labels.json'):
-        """生成 Prometheus 标签文件（文件服务发现格式）"""
-        targets = []
+    def generate_prometheus_labels(self, output_dir='/etc/prometheus/targets'):
+        """生成 Prometheus 标签文件（按设备类型分类的文件服务发现格式）"""
+        # 按设备类型分类
+        switches = []   # 交换机/路由器 → SNMP
+        servers = []    # 服务器 → node_exporter
 
         for device_name, node in self.topology['nodes'].items():
             # 找到该设备连接的交换机
@@ -257,7 +259,7 @@ class LLDPDiscovery:
                     connected_switches.append(edge['source'])
                     connected_ports.append(edge['target_port'])
 
-            # 生成标签
+            # 生成标签（统一的标签集）
             labels = {
                 'device_name': device_name,
                 'device_type': node.get('type', 'unknown'),
@@ -267,30 +269,108 @@ class LLDPDiscovery:
                 'topology_discovered': 'true'
             }
 
-            # 添加连接信息
+            # 添加连接信息（统一命名）
             if connected_switches:
-                labels['connected_switch'] = connected_switches[0]  # 主要连接的交换机
-                labels['connected_switches'] = ','.join(connected_switches)  # 所有连接
+                labels['connected_switch'] = connected_switches[0]
+                labels['connected_switches'] = ','.join(connected_switches)
 
             if connected_ports:
-                labels['connected_port'] = connected_ports[0]
+                labels['connected_switch_port'] = connected_ports[0]
 
-            # 如果设备有 IP，添加到 targets
-            if 'host' in node:
+            # 根据设备类型生成不同格式的 targets
+            if 'host' not in node:
+                continue
+
+            device_type = node.get('type', 'unknown')
+
+            # 交换机/路由器 → SNMP Exporter（裸 IP）
+            if device_type in ['switch', 'router', 'firewall']:
                 target_entry = {
-                    'targets': [f"{node['host']}:9100"],  # 假设是 node_exporter
+                    'targets': [node['host']],  # SNMP 用裸 IP
                     'labels': labels
                 }
-                targets.append(target_entry)
+                switches.append(target_entry)
 
-        # 保存为 Prometheus 文件服务发现格式
+            # 服务器 → Node Exporter（IP:端口）
+            elif device_type in ['server', 'host', 'vm']:
+                target_entry = {
+                    'targets': [f"{node['host']}:9100"],
+                    'labels': labels
+                }
+                servers.append(target_entry)
+
+        # 保存交换机配置（用于 SNMP）
+        switches_file = f"{output_dir}/topology-switches.json"
+        try:
+            with open(switches_file, 'w') as f:
+                json.dump(switches, f, indent=2, ensure_ascii=False)
+            logger.info(f"交换机拓扑标签已生成: {switches_file}")
+            logger.info(f"  包含 {len(switches)} 个交换机")
+        except Exception as e:
+            logger.error(f"生成交换机标签文件失败: {e}")
+
+        # 保存服务器配置（用于 Node Exporter）
+        servers_file = f"{output_dir}/topology-servers.json"
+        try:
+            with open(servers_file, 'w') as f:
+                json.dump(servers, f, indent=2, ensure_ascii=False)
+            logger.info(f"服务器拓扑标签已生成: {servers_file}")
+            logger.info(f"  包含 {len(servers)} 个服务器")
+        except Exception as e:
+            logger.error(f"生成服务器标签文件失败: {e}")
+
+    def generate_telegraf_labels(self, output_file='/data/topology/telegraf-labels.json'):
+        """生成 Telegraf 标签映射文件（hostname → labels）"""
+        # Telegraf 使用主机名作为 key
+        label_map = {}
+
+        for device_name, node in self.topology['nodes'].items():
+            # 找到该设备连接的交换机
+            connected_switches = []
+            connected_ports = []
+
+            for edge in self.topology['edges']:
+                if edge['source'] == device_name:
+                    connected_switches.append(edge['target'])
+                    connected_ports.append(edge['source_port'])
+                elif edge['target'] == device_name:
+                    connected_switches.append(edge['source'])
+                    connected_ports.append(edge['target_port'])
+
+            # 生成标签（与其他方式一致）
+            labels = {
+                'device_name': device_name,
+                'device_type': node.get('type', 'unknown'),
+                'device_tier': node.get('tier', 'unknown'),
+                'device_location': node.get('location', 'unknown'),
+                'device_vendor': node.get('vendor', 'unknown'),
+                'topology_discovered': 'true'
+            }
+
+            if connected_switches:
+                labels['connected_switch'] = connected_switches[0]
+                labels['connected_switches'] = ','.join(connected_switches)
+
+            if connected_ports:
+                labels['connected_switch_port'] = connected_ports[0]
+
+            # 使用设备名和 host 作为 key（支持多种匹配）
+            if 'host' in node:
+                # 使用 IP 地址作为 key
+                label_map[node['host']] = labels
+                # 也使用设备名作为 key（支持 hostname 匹配）
+                label_map[device_name] = labels
+                # 支持 FQDN（如果有）
+                label_map[f"{device_name}.local"] = labels
+
+        # 保存标签映射
         try:
             with open(output_file, 'w') as f:
-                json.dump(targets, f, indent=2, ensure_ascii=False)
-            logger.info(f"Prometheus 标签文件已生成: {output_file}")
-            logger.info(f"  包含 {len(targets)} 个目标")
+                json.dump(label_map, f, indent=2, ensure_ascii=False)
+            logger.info(f"Telegraf 标签映射已生成: {output_file}")
+            logger.info(f"  包含 {len(label_map)} 个映射条目")
         except Exception as e:
-            logger.error(f"生成标签文件失败: {e}")
+            logger.error(f"生成 Telegraf 标签映射失败: {e}")
 
     def generate_grafana_graph(self, output_file='/data/topology/graph.json'):
         """生成 Grafana Node Graph 数据"""
@@ -342,8 +422,11 @@ def main():
     # 保存拓扑数据
     discovery.save_topology('/data/topology/topology.json')
 
-    # 生成 Prometheus 标签
-    discovery.generate_prometheus_labels('/data/topology/labels.json')
+    # 生成 Prometheus 标签（按设备类型分类）
+    discovery.generate_prometheus_labels('/etc/prometheus/targets')
+
+    # 生成 Telegraf 标签映射
+    discovery.generate_telegraf_labels('/data/topology/telegraf-labels.json')
 
     # 生成 Grafana 图数据
     discovery.generate_grafana_graph('/data/topology/graph.json')
