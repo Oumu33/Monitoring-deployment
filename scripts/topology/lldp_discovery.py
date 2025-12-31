@@ -31,7 +31,16 @@ import hashlib
 from datetime import datetime
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pysnmp.hlapi import *
+from pysnmp.hlapi import (
+    SnmpEngine,
+    CommunityData,
+    UdpTransportTarget,
+    ContextData,
+    ObjectType,
+    ObjectIdentity,
+    nextCmd,
+    getCmd
+)
 import threading
 import os
 
@@ -170,19 +179,19 @@ class TopologyDiscovery:
     def snmp_walk_with_retry(self, device, oid, max_retries=3):
         """SNMP Walk 查询（带重试机制）"""
         results = []
-        
+
         for attempt in range(max_retries):
             try:
-                iterator = nextCmd(
-                    SnmpEngine(),
-                    CommunityData(device.get('snmp_community', 'public')),
-                    UdpTransportTarget((device['host'], device.get('snmp_port', 161)), timeout=5, retries=1),
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid)),
-                    lexicographicMode=False
-                )
+                for (errorIndication,
+                     errorStatus,
+                     errorIndex,
+                     varBinds) in nextCmd(SnmpEngine(),
+                                          CommunityData(device.get('snmp_community', 'public')),
+                                          UdpTransportTarget((device['host'], device.get('snmp_port', 161)), timeout=5, retries=1),
+                                          ContextData(),
+                                          ObjectType(ObjectIdentity(oid)),
+                                          lexicographicMode=False):
 
-                for errorIndication, errorStatus, errorIndex, varBinds in iterator:
                     if errorIndication:
                         if attempt == max_retries - 1:
                             logger.error(f"{device['name']} SNMP 错误: {errorIndication}")
@@ -198,11 +207,11 @@ class TopologyDiscovery:
                     else:
                         for varBind in varBinds:
                             results.append(varBind)
-                
+
                 # 成功则返回
                 if results:
                     return results
-                    
+
             except Exception as e:
                 if attempt == max_retries - 1:
                     logger.error(f"{device['name']} SNMP 查询失败: {e}")
@@ -220,28 +229,28 @@ class TopologyDiscovery:
         """SNMP Get 查询（带重试机制）"""
         for attempt in range(max_retries):
             try:
-                iterator = getCmd(
-                    SnmpEngine(),
-                    CommunityData(device.get('snmp_community', 'public')),
-                    UdpTransportTarget((device['host'], device.get('snmp_port', 161)), timeout=3, retries=1),
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid))
+                errorIndication, errorStatus, errorIndex, varBinds = next(
+                    getCmd(SnmpEngine(),
+                          CommunityData(device.get('snmp_community', 'public')),
+                          UdpTransportTarget((device['host'], device.get('snmp_port', 161)), timeout=3, retries=1),
+                          ContextData(),
+                          ObjectType(ObjectIdentity(oid)))
                 )
-
-                errorIndication, errorStatus, errorIndex, varBinds = next(iterator)
 
                 if errorIndication or errorStatus:
                     if attempt == max_retries - 1:
                         return None
                 else:
                     return str(varBinds[0][1]) if varBinds else None
-                    
+
             except Exception as e:
                 if attempt == max_retries - 1:
                     logger.error(f"{device['name']} SNMP get 失败: {e}")
                 else:
                     wait_time = 2 ** attempt
                     time.sleep(wait_time)
+
+        return None
                     
         return None
 

@@ -7,16 +7,20 @@ FROM python:3.11-slim
 # 安装依赖（添加 curl 用于重载 vmagent）
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
+# 安装 Python 依赖（使用 pysnmp 4.4.12 和兼容的 pyasn1）
 RUN pip install --no-cache-dir \
-    pysnmp \
+    pysnmp==4.4.12 \
+    pyasn1==0.4.8 \
     pyyaml \
-    requests
+    requests \
+    networkx
 
 # 创建目录
 RUN mkdir -p /etc/topology /data/topology /scripts
 
 # 复制脚本
 COPY scripts/topology/lldp_discovery.py /scripts/
+COPY scripts/topology/topology_exporter.py /scripts/
 
 # 设置工作目录
 WORKDIR /scripts

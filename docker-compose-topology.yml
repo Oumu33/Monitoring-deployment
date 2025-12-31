@@ -3,7 +3,9 @@ version: '3.8'
 services:
   # Topology Discovery - 拓扑自动发现（拓扑组件，可选）
   topology-discovery:
-    image: python:3.9-slim
+    build:
+      context: .
+      dockerfile: Dockerfile.topology
     container_name: topology-discovery
     volumes:
       - ./config/topology/devices.yml:/etc/topology/devices.yml
@@ -19,7 +21,9 @@ services:
 
   # Topology Exporter - 拓扑指标导出（拓扑组件，可选）
   topology-exporter:
-    image: python:3.9-slim
+    build:
+      context: .
+      dockerfile: Dockerfile.topology
     container_name: topology-exporter
     depends_on:
       - topology-discovery
