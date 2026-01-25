@@ -1,0 +1,476 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Grafana Alloy 统一采集器
+  # ============================================================================
+  # 用途：整合 Promtail + Telegraf + vmagent + 部分 Exporter
+  # 替代组件：
+  #   ✓ Promtail - 日志采集
+  #   ✓ Syslog-NG - Syslog 接收器
+  #   ✓ Telegraf-VMware - VMware 监控
+  #   ✓ Telegraf-gNMI - gNMI 网络监控
+  #   ✓ vmagent - Prometheus 指标采集
+  #   ✓ Topology Exporter - 拓扑标签注入
+  #   ✓ SNMP Exporter - SNMP 监控（可整合）
+  #   ✓ Blackbox Exporter - 服务可用性探测（可整合）
+  #   ✓ Redfish Exporter - 硬件监控（可整合）
+  #
+  # 端口说明：
+  #   12345: Alloy 自监控端口（HTTP API + Metrics）
+  #   514/TCP: Syslog TCP 接收端口（替代 Syslog-NG）
+  #   514/UDP: Syslog UDP 接收端口（替代 Syslog-NG）
+  # ============================================================================
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+
+    # 依赖关系
+    depends_on:
+      - victoriametrics
+      - loki
+
+    # 端口映射
+    ports:
+      - "12345:12345"  # Alloy 自监控端口（HTTP API + Metrics）
+      - "514:514"      # Syslog TCP 端口（替代 Syslog-NG）
+      - "514:514/udp"  # Syslog UDP 端口（替代 Syslog-NG）
+
+    # 卷挂载
+    volumes:
+      # Alloy 配置文件
+      - ./config/alloy/alloy-config.alloy:/etc/alloy/config.alloy:ro
+
+      # Blackbox Exporter 配置文件
+      - ./config/blackbox-exporter/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+
+      # 文件服务发现目录（用于动态加载采集目标）
+      - ./config/vmagent/targets:/etc/prometheus/targets:ro
+
+      # 拓扑标签文件（用于拓扑标签注入）
+      - ./data/topology:/data/topology:ro
+
+      # 主机日志目录（用于日志采集）
+      - /var/log:/var/log:ro
+
+      # Docker 容器日志目录（用于容器日志采集）
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+
+      # Alloy 数据目录（用于存储位置信息等）
+      - alloy-data:/var/lib/alloy
+
+    # 启动命令
+    command:
+      - "run"
+      - "/etc/alloy/config.alloy"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy"
+
+    # 环境变量
+    environment:
+      # Alloy 日志级别（debug, info, warn, error）
+      - ALLOY_LOG_LEVEL=info
+
+      # VMware vCenter 配置
+      - VCENTER_URL=https://vcenter.example.com/sdk
+      - VCENTER_USERNAME=monitoring@vsphere.local
+      - VCENTER_PASSWORD=YourPassword123!
+
+      # gNMI 配置
+      - GNMI_USERNAME=admin
+      - GNMI_PASSWORD=YourPassword
+
+      # SNMP 配置
+      - SNMP_COMMUNITY=public
+
+      # Redfish 配置
+      - REDFISH_USERNAME=admin
+      - REDFISH_PASSWORD=YourPassword
+
+    # 资源限制（可选）
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 2G
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 512M
+
+    # 重启策略
+    restart: unless-stopped
+
+    # 网络配置
+    networks:
+      - monitoring
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:12345/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # 保留的核心组件（Alloy 不能替代）
+  # ============================================================================
+
+  # --------------------------------------------------------------------------
+  # VictoriaMetrics - 时序数据库
+  # --------------------------------------------------------------------------
+  # 用途：存储所有时序指标数据
+  # 端口：8428 (HTTP API + Metrics)
+  # 数据保留：12 个月
+  # --------------------------------------------------------------------------
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    container_name: victoriametrics
+
+    # 端口映射
+    ports:
+      - "8428:8428"
+
+    # 卷挂载
+    volumes:
+      - vmdata:/storage
+
+    # 启动命令
+    command:
+      - "--storageDataPath=/storage"
+      - "--httpListenAddr=:8428"
+      - "--retentionPeriod=12"  # 数据保留 12 个月
+      - "--search.maxPointsPerTimeseries=30000"  # 每个时间序列的最大点数
+      - "--search.maxUniqueTimeseries=300000"  # 最大唯一时间序列数
+
+    # 资源限制（可选）
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '4'
+    #       memory: 4G
+    #     reservations:
+    #       cpus: '1'
+    #       memory: 1G
+
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8428/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --------------------------------------------------------------------------
+  # vmalert - 告警规则引擎
+  # --------------------------------------------------------------------------
+  # 用途：评估告警规则，发送告警到 Alertmanager
+  # 端口：8880 (HTTP API + Metrics)
+  # --------------------------------------------------------------------------
+  vmalert:
+    image: victoriametrics/vmalert:latest
+    container_name: vmalert
+
+    # 依赖关系
+    depends_on:
+      - victoriametrics
+      - alertmanager
+
+    # 端口映射
+    ports:
+      - "8880:8880"
+
+    # 卷挂载
+    volumes:
+      - ./config/vmalert/alerts:/etc/alerts:ro
+      - ./config/vmalert/recording-rules:/etc/recording-rules:ro
+
+    # 启动命令
+    command:
+      - "--datasource.url=http://victoriametrics:8428"
+      - "--remoteRead.url=http://victoriametrics:8428"
+      - "--remoteWrite.url=http://victoriametrics:8428"
+      - "--notifier.url=http://alertmanager:9093"
+      - "--rule=/etc/alerts/*.yml"
+      - "--rule=/etc/recording-rules/*.yml"
+      - "--httpListenAddr=:8880"
+      - "--evaluationInterval=30s"  # 规则评估间隔
+
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  # --------------------------------------------------------------------------
+  # Alertmanager - 告警管理
+  # --------------------------------------------------------------------------
+  # 用途：接收、分组、路由告警，发送通知
+  # 端口：9093 (HTTP API + Web UI)
+  # --------------------------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+
+    # 端口映射
+    ports:
+      - "9093:9093"
+
+    # 卷挂载
+    volumes:
+      - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+
+    # 启动命令
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+      - "--web.external-url=http://localhost:9093"
+      - "--cluster.listen-address="  # 禁用集群模式（单机部署）
+
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --------------------------------------------------------------------------
+  # Grafana - 可视化平台
+  # --------------------------------------------------------------------------
+  # 用途：数据可视化、仪表盘、告警管理
+  # 端口：3000 (Web UI)
+  # 默认账号：admin / admin（首次登录需修改密码）
+  # --------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+
+    # 依赖关系
+    depends_on:
+      - victoriametrics
+      - loki
+
+    # 端口映射
+    ports:
+      - "3000:3000"
+
+    # 卷挂载
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+    # 环境变量
+    environment:
+      # 管理员账号
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+
+      # 安装插件
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+
+      # 服务器配置
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+
+      # 数据源配置（自动配置）
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --------------------------------------------------------------------------
+  # Loki - 日志聚合存储
+  # --------------------------------------------------------------------------
+  # 用途：存储和查询日志数据
+  # 端口：3100 (HTTP API)
+  # --------------------------------------------------------------------------
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+
+    # 端口映射
+    ports:
+      - "3100:3100"
+
+    # 卷挂载
+    volumes:
+      - ./config/loki/loki.yml:/etc/loki/loki.yml:ro
+      - ./config/loki/rules:/loki/rules:ro
+      - loki-data:/loki
+
+    # 启动命令
+    command: -config.file=/etc/loki/loki.yml
+
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================================
+  # 保留的特定 Exporter（Alloy 暂不完全支持或需要单独部署）
+  # ============================================================================
+
+  # --------------------------------------------------------------------------
+  # Node Exporter - Linux 节点监控
+  # --------------------------------------------------------------------------
+  # 用途：采集 Linux 主机系统指标（CPU、内存、磁盘、网络等）
+  # 端口：9100 (Metrics)
+  # 说明：推荐保留，需要部署在每台主机上
+  # --------------------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+
+    # 端口映射
+    ports:
+      - "9100:9100"
+
+    # 启动命令
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+      - "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
+
+    # 卷挂载
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # --------------------------------------------------------------------------
+  # IPMI Exporter - 老服务器硬件监控
+  # --------------------------------------------------------------------------
+  # 用途：采集 IPMI 硬件指标（温度、风扇、电源、RAID 等）
+  # 端口：9290 (Metrics)
+  # 说明：Alloy 不支持 IPMI 协议，必须保留
+  # --------------------------------------------------------------------------
+  ipmi-exporter:
+    image: prometheuscommunity/ipmi-exporter:latest
+    container_name: ipmi-exporter
+
+    # 端口映射
+    ports:
+      - "9290:9290"
+
+    # 启动命令
+    command:
+      - "--config.file=/etc/ipmi_exporter/ipmi.yml"
+
+    # 卷挂载
+    volumes:
+      - ./config/ipmi-exporter/ipmi.yml:/etc/ipmi_exporter/ipmi.yml:ro
+
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9290/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================================================
+  # 保留的拓扑发现（Python 脚本，Alloy 不支持）
+  # ============================================================================
+
+  # --------------------------------------------------------------------------
+  # Topology Discovery - LLDP 拓扑自动发现
+  # --------------------------------------------------------------------------
+  # 用途：通过 SNMP 采集 LLDP 邻居信息，构建网络拓扑图
+  # 说明：Python 脚本，Alloy 不支持，必须保留
+  # 运行间隔：300 秒（5 分钟）
+  # --------------------------------------------------------------------------
+  topology-discovery:
+    build:
+      context: .
+      dockerfile: Dockerfile.topology
+    container_name: topology-discovery
+
+    # 卷挂载
+    volumes:
+      - ./config/topology/devices.yml:/etc/topology/devices.yml:ro
+      - ./scripts/topology:/scripts:ro
+      - ./data/topology:/data/topology
+      - ./config/vmagent/targets:/etc/prometheus/targets
+
+    # 环境变量
+    environment:
+      - DISCOVERY_INTERVAL=300  # 发现间隔（秒）
+
+    # 启动命令
+    command: /bin/bash /scripts/run_discovery.sh
+
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+# ============================================================================
+# 数据卷定义
+# ============================================================================
+volumes:
+  # VictoriaMetrics 数据卷
+  vmdata:
+    driver: local
+
+  # Grafana 数据卷
+  grafana-data:
+    driver: local
+
+  # Alertmanager 数据卷
+  alertmanager-data:
+    driver: local
+
+  # Loki 数据卷
+  loki-data:
+    driver: local
+
+  # Alloy 数据卷
+  alloy-data:
+    driver: local
+
+# ============================================================================
+# 网络定义
+# ============================================================================
+networks:
+  # 监控网络
+  monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

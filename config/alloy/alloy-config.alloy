@@ -1,0 +1,1802 @@
+// ============================================================================
+// Grafana Alloy 统一遥测收集器配置
+// ============================================================================
+// 用途：整合 Promtail + Telegraf + vmagent + 部分 Exporter
+// 替代组件：
+//   ✓ Promtail - 日志采集
+//   ✓ Syslog-NG - Syslog 接收器
+//   ✓ Telegraf-VMware - VMware 监控
+//   ✓ Telegraf-gNMI - gNMI 网络监控
+//   ✓ vmagent - Prometheus 指标采集
+//   ✓ Topology Exporter - 拓扑标签注入
+//   ✓ SNMP Exporter - SNMP 监控（可整合）
+//   ✓ Blackbox Exporter - 服务可用性探测（可整合）
+//   ✓ Redfish Exporter - 硬件监控（可整合）
+//
+// 保留组件：
+//   ✗ VictoriaMetrics - 时序数据库
+//   ✗ Grafana - 可视化平台
+//   ✗ Alertmanager - 告警路由
+//   ✗ vmalert - 告警规则引擎
+//   ✗ Loki - 日志存储
+//   ✗ Node Exporter - 需部署在每台主机
+//   ✗ IPMI Exporter - Alloy 不支持 IPMI
+//   ✗ Topology Discovery - Python 脚本
+// ============================================================================
+
+// ===== 全局配置 =====
+logging {
+  // 日志级别：debug, info, warn, error
+  // 生产环境推荐：info
+  // 故障排查时：debug
+  level  = "info"
+
+  // 日志格式：logfmt, json
+  // logfmt：人类可读，适合终端查看
+  // json：结构化日志，适合日志分析系统
+  format = "logfmt"
+}
+
+// ============================================================================
+// 1. 日志采集（替代 Promtail + Syslog-NG）
+// ============================================================================
+
+// Loki 写入配置 - 将日志发送到 Loki 存储
+loki.write "local_loki" {
+  // Loki 服务端点
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+
+  // 批量写入配置
+  // batch_wait: 等待更多日志的时间（默认 1s）
+  // batch_size: 每批日志的最大大小（默认 1MB）
+  // min_wal_validity: WAL 最小有效时间（默认 5m）
+  // max_wal_age: WAL 最大保留时间（默认 2h）
+  // flush_on_shutdown: 关闭时是否刷新 WAL（默认 true）
+}
+
+// 主机日志采集 - 采集系统日志文件
+loki.source.file "host_logs" {
+  // 目标地址（用于标签）
+  targets    = [{__address__ = "localhost"}]
+
+  // 采集的日志文件路径
+  // **/*.log: 递归匹配所有 .log 文件
+  // 可以根据需要添加或修改路径
+  paths      = [
+    "/var/log/**/*.log",
+    "/var/log/syslog",
+    "/var/log/messages",
+    "/var/log/kern.log",
+    "/var/log/auth.log"
+  ]
+
+  // 采集间隔（默认 1s）
+  // 对于高频日志，可以设置为 100ms-500ms
+  // 对于低频日志，可以设置为 1s-5s
+  polling_interval = "1s"
+
+  // 读取位置文件（用于断点续传）
+  // 如果不指定，会自动生成在 /var/lib/alloy/positions 目录
+  # positions_file = "/var/lib/alloy/positions/host_logs.pos"
+
+  // 日志解析器（可选）
+  // 可以使用 json, regex, logfmt 等解析器
+  # parser {
+  #   json = {}
+  # }
+
+  // 转发到 Loki 写入器
+  forward_to = [loki.write.local_loki.receiver]
+}
+
+// Docker 容器日志采集 - 采集所有容器日志
+loki.source.docker "docker_logs" {
+  // Docker Socket 路径（默认）
+  # host = "unix:///var/run/docker.sock"
+
+  // 采集间隔（默认 1s）
+  # polling_interval = "1s"
+
+  // 是否包含停止的容器（默认 false）
+  // include_all_labels = false
+
+  // 转发到 Loki 写入器
+  forward_to = [loki.write.local_loki.receiver]
+}
+
+// Syslog 接收器（替代 Syslog-NG）- 接收网络设备 Syslog
+loki.source.syslog "syslog_receiver" {
+  // 监听地址和端口
+  // 0.0.0.0:514 - 监听所有网络接口的 514 端口
+  // 建议使用 0.0.0.0 以便接收来自不同网络的日志
+  listen_address = "0.0.0.0:514"
+
+  // 协议类型：tcp, udp
+  // tcp: 可靠传输，适合生产环境
+  // udp: 高性能，但可能丢包，适合测试环境
+  protocol = "tcp"
+
+  // Syslog 格式：rfc3164, rfc5424, auto
+  // rfc3164: 传统 BSD Syslog 格式
+  // rfc5424: 现代 Syslog 格式（支持结构化数据）
+  // auto: 自动检测
+  # format = "auto"
+
+  // 标签配置
+  labels = {
+    job = "syslog",
+    env = "production"
+  }
+
+  // 转发到 Loki 写入器
+  forward_to = [loki.write.local_loki.receiver]
+}
+
+// Syslog UDP 接收器（可选）- 同时支持 UDP 协议
+loki.source.syslog "syslog_receiver_udp" {
+  listen_address = "0.0.0.0:514"
+  protocol = "udp"
+
+  labels = {
+    job = "syslog-udp",
+    env = "production"
+  }
+
+  forward_to = [loki.write.local_loki.receiver]
+}
+
+// ============================================================================
+// 2. VMware 监控（替代 Telegraf VMware）
+// ============================================================================
+
+// VMware vCenter 监控 - 采集 ESXi 主机和虚拟机指标
+vmware.scrape "vmware_monitoring" {
+  // vCenter Server 地址
+  // 格式：https://<vcenter-hostname-or-ip>/sdk
+  // 示例：https://vcenter.example.com/sdk
+  // 环境变量：VCENTER_URL
+  endpoint = "https://vcenter.example.com/sdk"
+
+  // 认证信息
+  // 建议使用只读账号，避免安全风险
+  // 环境变量：VCENTER_USERNAME, VCENTER_PASSWORD
+  username = "monitoring@vsphere.local"
+  password = "YourPassword123!"
+
+  // SSL 证书验证
+  // true: 跳过 SSL 验证（自签名证书时使用）
+  // false: 验证 SSL 证书（生产环境推荐）
+  insecure_skip_verify = true
+
+  // 采集间隔（默认 60s）
+  // 生产环境推荐：60s-120s
+  // 测试环境：120s-300s
+  scrape_interval = "60s"
+
+  // 超时时间（默认 60s）
+  // 建议设置为 scrape_interval - 10s
+  timeout = "50s"
+
+  // 数据中心过滤（可选）
+  // 留空表示采集所有数据中心
+  // 示例：["Datacenter1", "Datacenter2"]
+  datacenters = ["Datacenter1"]
+
+  // 集群过滤（可选）
+  // 示例：["Cluster1", "Cluster2"]
+  # clusters = ["Cluster1"]
+
+  // 虚拟机指标选择
+  // 可用指标参考：https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.monitoring.doc/GUID-927D300F-527B-4D0D-817D-6E4A3D65C3F3.html
+  vm_metric_include = [
+    // CPU 指标
+    "cpu.usage.average",           // CPU 使用率（百分比）
+    "cpu.ready.summation",         // CPU 就绪时间（毫秒）
+    "cpu.usagemhz.average",        // CPU 使用量（MHz）
+    "cpu.demand.average",          // CPU 需求量（MHz）
+
+    // 内存指标
+    "mem.usage.average",           // 内存使用率（百分比）
+    "mem.consumed.average",        // 内存消耗量（MB）
+    "mem.active.average",          // 活跃内存（MB）
+    "mem.swapin.average",          // 换入内存（KB/s）
+    "mem.swapout.average",         // 换出内存（KB/s）
+
+    // 网络指标
+    "net.usage.average",           // 网络使用率（Kbps）
+    "net.bytesRx.average",         // 接收字节数（KB/s）
+    "net.bytesTx.average",         // 发送字节数（KB/s）
+    "net.droppedRx.summation",     // 接收丢包数
+    "net.droppedTx.summation",     // 发送丢包数
+
+    // 磁盘指标
+    "disk.usage.average",          // 磁盘使用率（Kbps）
+    "disk.read.average",           // 磁盘读取速率（KB/s）
+    "disk.write.average",          // 磁盘写入速率（KB/s）
+    "disk.latency.average",        // 磁盘延迟（毫秒）
+
+    // 系统指标
+    "sys.uptime.latest",           // 系统运行时间（秒）
+  ]
+
+  // ESXi 主机指标选择
+  host_metric_include = [
+    // CPU 指标
+    "cpu.usage.average",           // CPU 使用率（百分比）
+    "cpu.coreUtilization.average", // CPU 核心使用率（百分比）
+    "cpu.usagemhz.average",        // CPU 使用量（MHz）
+
+    // 内存指标
+    "mem.usage.average",           // 内存使用率（百分比）
+    "mem.consumed.average",        // 内存消耗量（MB）
+    "mem.active.average",          // 活跃内存（MB）
+
+    // 网络指标
+    "net.usage.average",           // 网络使用率（Kbps）
+    "net.bytesRx.average",         // 接收字节数（KB/s）
+    "net.bytesTx.average",         // 发送字节数（KB/s）
+
+    // 磁盘指标
+    "disk.usage.average",          // 磁盘使用率（Kbps）
+    "disk.read.average",           // 磁盘读取速率（KB/s）
+    "disk.write.average",          // 磁盘写入速率（KB/s）
+
+    // 系统指标
+    "sys.uptime.latest",           // 系统运行时间（秒）
+  ]
+
+  // 数据存储指标选择
+  datastore_metric_include = [
+    "disk.used.latest",            // 已使用空间（字节）
+    "disk.capacity.latest",        // 总容量（字节）
+    "disk.provisioned.latest",     // 已分配空间（字节）
+    "disk.uncommitted.latest",     // 未分配空间（字节）
+  ]
+
+  // 自定义标签（可选）
+  // 这些标签会添加到所有采集的指标上
+  tags = {
+    datacenter = "dc1",
+    location = "main",
+    env = "production",
+    team = "ops"
+  }
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// 多 vCenter 监控示例（可选）
+// 如果有多个 vCenter，可以复制以下配置块
+vmware.scrape "vmware_monitoring_dc2" {
+  endpoint = "https://vcenter-dc2.example.com/sdk"
+  username = "monitoring@vsphere.local"
+  password = "YourPassword456!"
+  insecure_skip_verify = true
+
+  scrape_interval = "60s"
+  timeout = "50s"
+
+  datacenters = ["Datacenter2"]
+
+  vm_metric_include = [
+    "cpu.usage.average",
+    "mem.usage.average",
+    "net.usage.average",
+    "disk.usage.average"
+  ]
+
+  host_metric_include = [
+    "cpu.usage.average",
+    "mem.usage.average",
+    "disk.usage.average"
+  ]
+
+  tags = {
+    datacenter = "dc2",
+    location = "backup",
+    env = "production",
+    team = "ops"
+  }
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// ============================================================================
+// 3. gNMI 监控（替代 Telegraf gNMI）
+// ============================================================================
+// gNMI (gRPC Network Management Interface) 是新一代网络设备管理协议
+// 支持流式遥测，比 SNMP 性能更好，实时性更高
+// 支持厂商：Cisco NX-OS, Juniper JunOS, Arista EOS, Huawei VRP 等
+
+// gNMI 目标设备定义 - 核心交换机
+gnmi.target "switch_core_01" {
+  // 设备名称（用于标签）
+  name = "switch-core-01"
+
+  // 设备地址
+  // 格式：<ip>:<port>
+  // 标准 gNMI 端口：10161
+  // 示例：192.168.1.100:10161
+  address = "192.168.1.100:10161"
+
+  // 认证信息
+  // 环境变量：GNMI_USERNAME, GNMI_PASSWORD
+  username = "admin"
+  password = "YourPassword"
+
+  // YANG 模型路径（要采集的数据路径）
+  // 路径格式：/<module>/<container>/<leaf>
+  // 常见路径：
+  //   /system/cpu/usage - CPU 使用率
+  //   /interfaces/interface/state/counters - 接口计数器
+  //   /interfaces/interface/state/oper-status - 接口状态
+  //   /system/memory/usage - 内存使用率
+  paths = [
+    // 系统指标
+    "/system/cpu/usage",
+    "/system/memory/usage",
+    "/system/uptime",
+
+    // 接口指标
+    "/interfaces/interface/state/counters",
+    "/interfaces/interface/state/oper-status",
+    "/interfaces/interface/state/speed",
+
+    // 路由指标
+    "/routing/rib/rib-state/num-routes",
+
+    // BGP 指标（如果支持）
+    "/network-instances/network-instance/protocols/protocol/bgp/neighbors/neighbor/state/session-state",
+  ]
+
+  // 采集间隔（默认 60s）
+  // 对于高频指标，可以设置为 10s-30s
+  // 对于低频指标，可以设置为 60s-300s
+  scrape_interval = "60s"
+
+  // 订阅模式（默认 sample）
+  // sample: 定期采样
+  // on_change: 仅在变化时推送
+  // target_defined: 使用设备定义的模式
+  subscription_mode = "sample"
+}
+
+// gNMI 目标设备定义 - 接入交换机
+gnmi.target "switch_access_01" {
+  name = "switch-access-01"
+  address = "192.168.1.101:10161"
+  username = "admin"
+  password = "YourPassword"
+
+  paths = [
+    "/system/cpu/usage",
+    "/system/memory/usage",
+    "/interfaces/interface/state/counters",
+    "/interfaces/interface/state/oper-status",
+  ]
+
+  scrape_interval = "60s"
+}
+
+// gNMI 目标设备定义 - 路由器
+gnmi.target "router_edge_01" {
+  name = "router-edge-01"
+  address = "192.168.1.200:10161"
+  username = "admin"
+  password = "YourPassword"
+
+  paths = [
+    "/system/cpu/usage",
+    "/system/memory/usage",
+    "/interfaces/interface/state/counters",
+    "/interfaces/interface/state/oper-status",
+    "/routing/rib/rib-state/num-routes",
+    "/network-instances/network-instance/protocols/protocol/bgp/neighbors/neighbor/state/session-state",
+  ]
+
+  scrape_interval = "30s"  // 路由器指标变化较快
+}
+
+// gNMI 采集器 - 统一采集所有 gNMI 设备
+gnmi.scrape "gnmi_monitoring" {
+  // 采集的目标设备列表
+  targets = [
+    gnmi.target.switch_core_01,
+    gnmi.target.switch_access_01,
+    gnmi.target.router_edge_01
+  ]
+
+  // 超时时间（默认 30s）
+  timeout = "30s"
+
+  // 重试配置
+  // retry_interval: 重试间隔（默认 5s）
+  // max_retries: 最大重试次数（默认 3）
+  retry_interval = "5s"
+  max_retries = 3
+
+  // TLS 配置（可选）
+  // 如果设备使用 TLS 加密，需要配置证书
+  # tls_config {
+  #   insecure_skip_verify = true  // 跳过证书验证（测试环境）
+  #   ca_file = "/etc/ssl/certs/ca.pem"  // CA 证书路径
+  #   cert_file = "/etc/ssl/certs/client.pem"  // 客户端证书路径
+  #   key_file = "/etc/ssl/certs/client-key.pem"  // 客户端私钥路径
+  # }
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// ============================================================================
+// 4. SNMP 监控（整合 SNMP Exporter）
+// ============================================================================
+// SNMP (Simple Network Management Protocol) 是传统网络设备管理协议
+// 支持厂商：所有网络设备厂商（Cisco, Huawei, H3C, Juniper 等）
+// 版本：SNMPv2c（社区字符串认证）、SNMPv3（加密认证）
+
+// SNMP 采集器 - 网络交换机监控
+snmp.scrape "network_switches" {
+  // 采集目标列表
+  // 每个目标包含：
+  //   __address__: 设备 IP 地址
+  //   name: 设备名称（用于标签）
+  //   community: SNMP community（可选，默认为全局配置）
+  //   version: SNMP 版本（可选，默认为全局配置）
+  targets = [
+    // 核心交换机
+    {__address__ = "192.168.1.100", name = "switch-core-01", tier = "core", location = "dc1-core-room"},
+    // 接入交换机
+    {__address__ = "192.168.1.101", name = "switch-access-01", tier = "access", location = "dc1-rack-A01"},
+    {__address__ = "192.168.1.102", name = "switch-access-02", tier = "access", location = "dc1-rack-A02"},
+    // 汇聚交换机
+    {__address__ = "192.168.1.110", name = "switch-aggregation-01", tier = "aggregation", location = "dc1-core-room"},
+  ]
+
+  // SNMP 版本
+  // 1: SNMPv1（不推荐，安全性低）
+  // 2: SNMPv2c（常用，社区字符串认证）
+  // 3: SNMPv3（推荐，支持加密和认证）
+  version = 2
+
+  // SNMP Community 字符串（SNMPv2c）
+  // 生产环境请使用强密码，不要使用 "public"
+  // 环境变量：SNMP_COMMUNITY
+  community = "public"
+
+  // SNMPv3 配置（如果使用 SNMPv3）
+  # version = 3
+  # security_name = "monitoring"
+  # auth_protocol = "MD5"  // 或 "SHA"
+  # auth_password = "YourAuthPassword"
+  # priv_protocol = "DES"  // 或 "AES"
+  # priv_password = "YourPrivPassword"
+
+  // 采集间隔（默认 60s）
+  // 生产环境推荐：60s-120s
+  // 测试环境：120s-300s
+  scrape_interval = "60s"
+
+  // 超时时间（默认 10s）
+  timeout = "10s"
+
+  // 重试配置
+  // retry_interval: 重试间隔（默认 5s）
+  // max_retries: 最大重试次数（默认 3）
+  retry_interval = "5s"
+  max_retries = 3
+
+  // SNMP 模块（对应 snmp.yml 中的配置）
+  // 常用模块：
+  //   if_mib: 接口指标（IF-MIB）
+  //   cisco: Cisco 设备指标
+  //   huawei: 华为设备指标
+  //   h3c: 华三设备指标
+  //   juniper: Juniper 设备指标
+  //   system: 系统指标（CPU、内存、温度等）
+  modules = ["if_mib", "cisco", "system"]
+
+  // 自定义标签（可选）
+  // 这些标签会添加到所有采集的指标上
+  labels = {
+    env = "production",
+    datacenter = "dc1",
+    team = "network"
+  }
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// SNMP 采集器 - 路由器监控
+snmp.scrape "network_routers" {
+  targets = [
+    {__address__ = "192.168.1.200", name = "router-edge-01", tier = "edge", location = "dc1-edge-room"},
+    {__address__ = "192.168.1.201", name = "router-edge-02", tier = "edge", location = "dc1-edge-room"},
+  ]
+
+  version = 2
+  community = "public"
+
+  scrape_interval = "60s"
+  timeout = "10s"
+
+  // 路由器专用模块
+  modules = ["if_mib", "cisco", "bgp", "ospf"]
+
+  labels = {
+    env = "production",
+    datacenter = "dc1",
+    team = "network"
+  }
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// SNMP 采集器 - 防火墙监控
+snmp.scrape "network_firewalls" {
+  targets = [
+    {__address__ = "192.168.1.250", name = "firewall-01", tier = "firewall", location = "dc1-edge-room"},
+  ]
+
+  version = 2
+  community = "public"
+
+  scrape_interval = "60s"
+  timeout = "10s"
+
+  // 防火墙专用模块
+  modules = ["if_mib", "cisco", "firewall"]
+
+  labels = {
+    env = "production",
+    datacenter = "dc1",
+    team = "security"
+  }
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// ============================================================================
+// 5. Blackbox 监控（整合 Blackbox Exporter）
+// ============================================================================
+// Blackbox Exporter 用于探测服务可用性、性能和健康状态
+// 支持协议：HTTP/HTTPS, ICMP, TCP, DNS, gRPC
+
+// Blackbox 目标配置 - HTTP/HTTPS 探测
+discovery.relabel "blackbox_http_targets" {
+  // 探测目标列表
+  // 每个目标包含：
+  //   __address__: 目标地址（格式：<url>:<port>）
+  //   module: 探测模块名称（对应 blackbox.yml 中的配置）
+  //   name: 目标名称（用于标签）
+  targets = [
+    // 网站 HTTP 探测
+    {__address__ = "http://example.com:80", module = "http_2xx", name = "example-website"},
+    // 网站 HTTPS 探测
+    {__address__ = "https://example.com:443", module = "https_2xx", name = "example-website-https"},
+    // API 探测
+    {__address__ = "https://api.example.com:443", module = "http_api_2xx", name = "example-api"},
+    // 内部服务探测
+    {__address__ = "http://internal-service:8080", module = "http_2xx", name = "internal-service"},
+  ]
+
+  // 标签重写规则
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "instance"
+  }
+
+  rule {
+    source_labels = ["module"]
+    target_label  = "module"
+  }
+
+  rule {
+    source_labels = ["name"]
+    target_label  = "name"
+  }
+}
+
+// Blackbox 目标配置 - ICMP 探测（Ping）
+discovery.relabel "blackbox_icmp_targets" {
+  targets = [
+    {__address__ = "192.168.1.1", module = "icmp", name = "gateway"},
+    {__address__ = "192.168.1.100", module = "icmp", name = "switch-core-01"},
+    {__address__ = "192.168.1.101", module = "icmp", name = "switch-access-01"},
+    {__address__ = "8.8.8.8", module = "icmp", name = "dns-google"},
+  ]
+
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "instance"
+  }
+
+  rule {
+    source_labels = ["module"]
+    target_label  = "module"
+  }
+
+  rule {
+    source_labels = ["name"]
+    target_label  = "name"
+  }
+}
+
+// Blackbox 目标配置 - TCP 探测
+discovery.relabel "blackbox_tcp_targets" {
+  targets = [
+    {__address__ = "192.168.1.100:22", module = "tcp_connect", name = "switch-core-01-ssh"},
+    {__address__ = "192.168.1.100:23", module = "tcp_connect", name = "switch-core-01-telnet"},
+    {__address__ = "192.168.1.200:3306", module = "tcp_connect", name = "mysql-server"},
+    {__address__ = "192.168.1.201:5432", module = "tcp_connect", name = "postgresql-server"},
+  ]
+
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "instance"
+  }
+
+  rule {
+    source_labels = ["module"]
+    target_label  = "module"
+  }
+
+  rule {
+    source_labels = ["name"]
+    target_label  = "name"
+  }
+}
+
+// Blackbox 目标配置 - DNS 探测
+discovery.relabel "blackbox_dns_targets" {
+  targets = [
+    {__address__ = "8.8.8.8:53", module = "dns_udp", name = "dns-google-udp"},
+    {__address__ = "8.8.8.8:53", module = "dns_tcp", name = "dns-google-tcp"},
+    {__address__ = "1.1.1.1:53", module = "dns_udp", name = "dns-cloudflare-udp"},
+  ]
+
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "instance"
+  }
+
+  rule {
+    source_labels = ["module"]
+    target_label  = "module"
+  }
+
+  rule {
+    source_labels = ["name"]
+    target_label  = "name"
+  }
+}
+
+// Blackbox Exporter - 内置 Blackbox 服务
+blackbox.exporter "blackbox_exporter" {
+  // Blackbox 配置文件路径
+  // 配置文件定义了各种探测模块
+  config_file = "/etc/blackbox_exporter/config.yml"
+
+  // 监听地址（默认 0.0.0.0:9115）
+  # listen_address = "0.0.0.0:9115"
+}
+
+// Prometheus 采集器 - HTTP/HTTPS 探测
+prometheus.scrape "blackbox_http" {
+  // 使用 Blackbox Exporter 进行探测
+  // targets 参数传递给 Blackbox Exporter
+  targets    = [discovery.relabel.blackbox_http_targets.output]
+
+  // Blackbox Exporter 地址
+  // 格式：<blackbox_exporter_address>:<port>
+  metrics_path = "/probe"
+  scheme = "http"
+
+  // 参数传递
+  // module: 探测模块名称
+  // target: 探测目标地址
+  params = {
+    module = ["http_2xx"],
+  }
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  // 采集间隔（默认 30s）
+  scrape_interval = "30s"
+  scrape_timeout = "10s"
+
+  // 集群配置
+  clustering {
+    enabled = false  // 禁用集群模式（单机部署）
+  }
+}
+
+// Prometheus 采集器 - ICMP 探测
+prometheus.scrape "blackbox_icmp" {
+  targets    = [discovery.relabel.blackbox_icmp_targets.output]
+  metrics_path = "/probe"
+  scheme = "http"
+
+  params = {
+    module = ["icmp"],
+  }
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  scrape_interval = "30s"
+  scrape_timeout = "10s"
+
+  clustering {
+    enabled = false
+  }
+}
+
+// Prometheus 采集器 - TCP 探测
+prometheus.scrape "blackbox_tcp" {
+  targets    = [discovery.relabel.blackbox_tcp_targets.output]
+  metrics_path = "/probe"
+  scheme = "http"
+
+  params = {
+    module = ["tcp_connect"],
+  }
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  scrape_interval = "30s"
+  scrape_timeout = "10s"
+
+  clustering {
+    enabled = false
+  }
+}
+
+// Prometheus 采集器 - DNS 探测
+prometheus.scrape "blackbox_dns" {
+  targets    = [discovery.relabel.blackbox_dns_targets.output]
+  metrics_path = "/probe"
+  scheme = "http"
+
+  params = {
+    module = ["dns_udp"],
+  }
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  scrape_interval = "30s"
+  scrape_timeout = "10s"
+
+  clustering {
+    enabled = false
+  }
+}
+
+// Prometheus 采集器 - Blackbox Exporter 自监控
+prometheus.scrape "blackbox_exporter_self" {
+  // 监控 Blackbox Exporter 自身的运行状态
+  targets    = [{
+    __address__ = "blackbox_exporter:9115"
+  }]
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  job_name = "blackbox-exporter"
+
+  scrape_interval = "15s"
+  scrape_timeout = "10s"
+}
+
+// ============================================================================
+// 6. Prometheus 采集（替代 vmagent）
+// ============================================================================
+
+// 文件服务发现 - 动态加载采集目标
+// 支持从 JSON/YAML 文件中读取目标列表
+// 当文件变化时，自动重新加载目标
+discovery.file "file_sd" {
+  // 文件路径（支持通配符）
+  // 示例：/etc/prometheus/targets/*.json
+  // 文件格式：
+  //   [
+  //     {
+  //       "targets": ["192.168.1.10:9100"],
+  //       "labels": {
+  //         "job": "node-exporter",
+  //         "instance": "server-01"
+  //       }
+  //     }
+  //   ]
+  paths = [
+    "/etc/prometheus/targets/*.json",
+    "/etc/prometheus/targets/*.yml"
+  ]
+
+  // 刷新间隔（默认 60s）
+  // 当文件变化时，会自动重新加载
+  refresh_interval = "60s"
+}
+
+// Prometheus 采集器 - Node Exporter（主机监控）
+prometheus.scrape "node_exporter" {
+  // 采集目标列表
+  // 可以使用静态配置、文件服务发现、DNS 服务发现等
+  targets    = [{
+    __address__ = "node-exporter:9100"
+  }]
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  // 作业名称（用于标签）
+  job_name = "node-exporter"
+
+  // 采集间隔（默认 15s）
+  // 生产环境推荐：15s-30s
+  // 测试环境：30s-60s
+  scrape_interval = "15s"
+
+  // 采集超时时间（默认 10s）
+  // 建议设置为 scrape_interval - 5s
+  scrape_timeout = "10s"
+
+  // 指标路径（默认 /metrics）
+  metrics_path = "/metrics"
+
+  // 协议（默认 http）
+  scheme = "http"
+
+  // 标签重写规则
+  relabel_scrape {
+    source_labels = ["__address__"]
+    target_label  = "instance"
+  }
+
+  // 采样配置
+  // sample_limit: 每次采集的最大样本数（默认 0，无限制）
+  # sample_limit = 100000
+
+  // 标签限制
+  // label_limit: 每个指标的最大标签数（默认 0，无限制）
+  # label_limit = 100
+
+  // 标签名称长度限制
+  // label_name_length_limit: 标签名称的最大长度（默认 0，无限制）
+  # label_name_length_limit = 200
+
+  // 标签值长度限制
+  // label_value_length_limit: 标签值的最大长度（默认 0，无限制）
+  # label_value_length_limit = 200
+}
+
+// Prometheus 采集器 - 使用文件服务发现
+prometheus.scrape "file_sd_targets" {
+  // 使用文件服务发现
+  targets    = [discovery.file.file_sd.output]
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  job_name = "file-sd"
+
+  scrape_interval = "15s"
+  scrape_timeout = "10s"
+
+  metrics_path = "/metrics"
+
+  // 标签重写规则
+  relabel_scrape {
+    // 从文件中读取 job 标签
+    source_labels = ["job"]
+    target_label  = "job"
+  }
+
+  relabel_scrape {
+    // 从文件中读取 instance 标签
+    source_labels = ["instance"]
+    target_label  = "instance"
+  }
+}
+
+// Prometheus 采集器 - 静态配置示例
+discovery.static "static_targets" {
+  // 静态目标列表
+  targets = [
+    // Linux 服务器
+    {__address__ = "192.168.1.10:9100", instance = "server-01", role = "webserver", env = "production"},
+    {__address__ = "192.168.1.11:9100", instance = "server-02", role = "webserver", env = "production"},
+    {__address__ = "192.168.1.12:9100", instance = "server-03", role = "database", env = "production"},
+    // Windows 服务器（使用 WMI Exporter）
+    {__address__ = "192.168.1.20:9182", instance = "windows-server-01", role = "domain-controller", env = "production"},
+  ]
+
+  // 全局标签
+  labels = {
+    datacenter = "dc1",
+    location = "main",
+    team = "ops"
+  }
+}
+
+prometheus.scrape "static_targets" {
+  targets    = [discovery.static.static_targets.output]
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  job_name = "static"
+
+  scrape_interval = "15s"
+  scrape_timeout = "10s"
+
+  metrics_path = "/metrics"
+}
+
+// Prometheus 采集器 - DNS 服务发现示例
+discovery.dns "dns_sd" {
+  // DNS 记录类型
+  // A: IPv4 地址
+  // AAAA: IPv6 地址
+  // SRV: 服务记录
+  names = [
+    "_prometheus._tcp.monitoring.svc.cluster.local",  // Kubernetes 服务发现
+  ]
+
+  // DNS 服务器（可选，默认使用系统 DNS）
+  # nameservers = ["8.8.8.8:53", "1.1.1.1:53"]
+
+  // 刷新间隔（默认 30s）
+  refresh_interval = "30s"
+
+  // 端口（默认 0，使用 DNS 记录中的端口）
+  # port = 9100
+
+  // 类型（默认 SRV）
+  # type = "SRV"
+}
+
+prometheus.scrape "dns_sd_targets" {
+  targets    = [discovery.dns.dns_sd.output]
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  job_name = "dns-sd"
+
+  scrape_interval = "15s"
+  scrape_timeout = "10s"
+
+  metrics_path = "/metrics"
+}
+
+// Prometheus 采集器 - HTTP 服务发现示例
+discovery.http "http_sd" {
+  // HTTP 服务发现 URL
+  // 返回 JSON 格式的目标列表
+  url = "http://service-discovery:8080/api/v1/targets"
+
+  // 刷新间隔（默认 30s）
+  refresh_interval = "30s"
+
+  // HTTP 客户端配置
+  # http_client_config {
+  #   tls_config {
+  #     insecure_skip_verify = false
+  #   }
+  #   basic_auth {
+  #     username = "admin"
+  #     password = "password"
+  #   }
+  # }
+}
+
+prometheus.scrape "http_sd_targets" {
+  targets    = [discovery.http.http_sd.output]
+
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  job_name = "http-sd"
+
+  scrape_interval = "15s"
+  scrape_timeout = "10s"
+
+  metrics_path = "/metrics"
+}
+
+// Prometheus 采集器 - Kubernetes 服务发现示例（可选）
+// 如果在 Kubernetes 环境中运行，可以使用以下配置
+# discovery.kubernetes "kubernetes_pods" {
+#   role = "pod"
+#
+#   selectors = [
+#     {
+#       role = "pod"
+#       label = "app"
+#       value = "monitoring"
+#     }
+#   ]
+# }
+#
+# prometheus.scrape "kubernetes_pods" {
+#   targets    = [discovery.kubernetes.kubernetes_pods.output]
+#
+#   forward_to = [prometheus.remote_write.victoriametrics.receiver]
+#
+#   job_name = "kubernetes-pods"
+#
+#   scrape_interval = "15s"
+#   scrape_timeout = "10s"
+#
+#   metrics_path = "/metrics"
+#
+#   relabel_scrape {
+#     source_labels = ["__meta_kubernetes_pod_name"]
+#     target_label  = "pod"
+#   }
+#
+#   relabel_scrape {
+#     source_labels = ["__meta_kubernetes_namespace"]
+#     target_label  = "namespace"
+#   }
+# }
+
+// ============================================================================
+// 7. 拓扑标签注入（替代 Topology Exporter）
+// ============================================================================
+// 从 LLDP 拓扑发现结果中读取标签，自动注入到所有指标
+// 支持的标签：
+//   device_tier: 设备层级（core/aggregation/access）
+//   connected_switch: 连接的交换机
+//   connected_port: 连接的端口
+//   device_location: 设备位置
+//   topology_discovered: 是否通过拓扑发现
+
+// 拓扑标签文件服务发现
+discovery.file "topology_labels" {
+  // 拓扑标签文件路径
+  // 文件格式（JSON）：
+  //   {
+  //     "192.168.1.10:9100": {
+  //       "device_name": "server-01",
+  //       "device_type": "server",
+  //       "device_tier": "access",
+  //       "device_location": "dc1-rack-A01",
+  //       "connected_switch": "switch-access-01",
+  //       "connected_port": "Gi0/1",
+  //       "topology_discovered": "true",
+  //       "topology_updated": "2025-01-15T10:30:00Z"
+  //     }
+  //   }
+  paths = ["/data/topology/topology-labels.json"]
+
+  // 刷新间隔（默认 300s）
+  // 与拓扑发现间隔保持一致
+  refresh_interval = "300s"
+}
+
+// 标签注入器 - 为所有指标添加拓扑标签
+prometheus.relabel "inject_topology_labels" {
+  // 要注入标签的指标来源
+  // 可以添加更多采集器的输出
+  targets = [
+    prometheus.scrape.node_exporter.output,
+    prometheus.scrape.file_sd_targets.output,
+    prometheus.scrape.static_targets.output,
+  ]
+
+  // 标签重写规则 1: 提取设备名称
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "device_name"
+    replacement  = "$1"
+  }
+
+  // 标签重写规则 2: 注入设备层级标签
+  rule {
+    source_labels = ["device_name"]
+    target_label  = "device_tier"
+    lookup_file   = "/data/topology/topology-labels.json"
+    lookup_key    = "tier"
+    lookup_default = "unknown"
+  }
+
+  // 标签重写规则 3: 注入连接交换机标签
+  rule {
+    source_labels = ["device_name"]
+    target_label  = "connected_switch"
+    lookup_file   = "/data/topology/topology-labels.json"
+    lookup_key    = "connected_switch"
+    lookup_default = "unknown"
+  }
+
+  // 标签重写规则 4: 注入连接端口标签
+  rule {
+    source_labels = ["device_name"]
+    target_label  = "connected_port"
+    lookup_file   = "/data/topology/topology-labels.json"
+    lookup_key    = "connected_port"
+    lookup_default = "unknown"
+  }
+
+  // 标签重写规则 5: 注入设备位置标签
+  rule {
+    source_labels = ["device_name"]
+    target_label  = "device_location"
+    lookup_file   = "/data/topology/topology-labels.json"
+    lookup_key    = "location"
+    lookup_default = "unknown"
+  }
+
+  // 标签重写规则 6: 注入拓扑发现标记
+  rule {
+    source_labels = ["device_name"]
+    target_label  = "topology_discovered"
+    lookup_file   = "/data/topology/topology-labels.json"
+    lookup_key    = "topology_discovered"
+    lookup_default = "false"
+  }
+
+  // 标签重写规则 7: 注入拓扑更新时间
+  rule {
+    source_labels = ["device_name"]
+    target_label  = "topology_updated"
+    lookup_file   = "/data/topology/topology-labels.json"
+    lookup_key    = "topology_updated"
+    lookup_default = ""
+  }
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// ============================================================================
+// 8. Remote Write 到 VictoriaMetrics（核心配置）
+// ============================================================================
+
+// Remote Write - 将指标发送到 VictoriaMetrics
+prometheus.remote_write "victoriametrics" {
+  // VictoriaMetrics 端点配置
+  endpoint {
+    // VictoriaMetrics HTTP API 地址
+    // 格式：http://<host>:<port>/api/v1/write
+    url = "http://victoriametrics:8428/api/v1/write"
+
+    // HTTP 客户端配置
+    # tls_config {
+    #   insecure_skip_verify = false  // 生产环境建议验证证书
+    #   ca_file = "/etc/ssl/certs/ca.pem"
+    # }
+
+    # basic_auth {
+    #   username = "admin"
+    #   password = "password"
+    # }
+
+    # headers {
+    #   X-Custom-Header = "value"
+    # }
+  }
+
+  // 批量写入配置
+  // batch_send_deadline: 等待更多数据的时间（默认 5s）
+  // max_samples_per_send: 每次发送的最大样本数（默认 10000）
+  // max_metadata_samples_per_batch: 每次发送的最大元数据样本数（默认 1000）
+  batch_send_deadline = "5s"
+
+  // 元数据配置
+  // send: 是否发送元数据（默认 false）
+  // send_interval: 元数据发送间隔（默认 30s）
+  // 元数据包括指标名称、标签、帮助信息等
+  metadata_config {
+    send = true
+    send_interval = "30s"
+  }
+
+  // 队列配置（控制数据发送速率）
+  queue_config {
+    // 容量：队列中最大样本数（默认 10000）
+    // 如果队列满，新的样本会被丢弃
+    capacity = 10000
+
+    // 最大分片数（默认 50）
+    // 分片数越多，并发度越高，但内存占用也越大
+    max_shards = 50
+
+    // 最小分片数（默认 1）
+    // 初始分片数，会根据负载自动调整
+    min_shards = 1
+
+    // 每次发送的最大样本数（默认 5000）
+    // 建议设置为 1000-10000 之间
+    max_samples_per_send = 5000
+
+    // 批量发送截止时间（默认 5s）
+    // 即使样本数未达到 max_samples_per_send，也会在截止时间后发送
+    batch_send_deadline = "5s"
+
+    // 最小退避时间（默认 30ms）
+    // 发送失败后的重试最小间隔
+    min_backoff = "30ms"
+
+    // 最大退避时间（默认 100ms）
+    // 发送失败后的重试最大间隔
+    max_backoff = "100ms"
+
+    // 最大重试次数（默认 10）
+    // 发送失败后的最大重试次数
+    max_retries = 10
+  }
+
+  // 写入重放配置（可选）
+  // 如果 VictoriaMetrics 不可用，是否将数据写入磁盘
+  # write_relabel_configs {
+  #   - source_labels: ["__name__"]
+  #     regex: "up"
+  #     action: "drop"
+  # }
+
+  // 指标重写规则（可选）
+  # 可以在发送前修改指标
+  # write_relabel {
+  #   source_labels = ["__name__"]
+  #   regex = "node_(.*)"
+  #   target_label  = "__name__"
+  #   replacement   = "host_$1"
+  # }
+}
+
+// Remote Write - 备份端点（可选）
+// 可以同时将数据发送到多个 VictoriaMetrics 实例
+prometheus.remote_write "victoriametrics_backup" {
+  endpoint {
+    url = "http://victoriametrics-backup:8428/api/v1/write"
+  }
+
+  batch_send_deadline = "5s"
+
+  metadata_config {
+    send = true
+    send_interval = "30s"
+  }
+
+  queue_config {
+    capacity = 10000
+    max_shards = 50
+    min_shards = 1
+    max_samples_per_send = 5000
+    batch_send_deadline = "5s"
+    min_backoff = "30ms"
+    max_backoff = "100ms"
+  }
+}
+
+// ============================================================================
+// 9. Redfish 硬件监控（整合 Redfish Exporter）
+// ============================================================================
+// Redfish 是现代服务器硬件管理标准
+// 支持厂商：Dell, HPE, Lenovo, Fujitsu, Supermicro 等
+// 监控内容：温度、风扇、电源、RAID、硬盘 SMART、内存 ECC 等
+
+// Redfish 目标配置
+discovery.relabel "redfish_targets" {
+  // Redfish 服务器列表
+  // 每个目标包含：
+  //   __address__: Redfish 服务地址（格式：<ip>:<port>）
+  //   name: 服务器名称（用于标签）
+  //   vendor: 厂商（用于标签）
+  //   model: 型号（用于标签）
+  targets = [
+    // Dell PowerEdge 服务器
+    {__address__ = "192.168.1.200:443", name = "dell-r740-01", vendor = "dell", model = "r740", location = "dc1-rack-A01"},
+    {__address__ = "192.168.1.201:443", name = "dell-r740-02", vendor = "dell", model = "r740", location = "dc1-rack-A02"},
+    // HPE ProLiant 服务器
+    {__address__ = "192.168.1.210:443", name = "hpe-dl380-01", vendor = "hpe", model = "dl380", location = "dc1-rack-B01"},
+    // Lenovo ThinkSystem 服务器
+    {__address__ = "192.168.1.220:443", name = "lenovo-sr650-01", vendor = "lenovo", model = "sr650", location = "dc1-rack-C01"},
+  ]
+
+  // 标签重写规则 1: 提取实例标签
+  rule {
+    source_labels = ["__address__"]
+    target_label  = "instance"
+  }
+
+  // 标签重写规则 2: 提取服务器名称
+  rule {
+    source_labels = ["name"]
+    target_label  = "server"
+  }
+
+  // 标签重写规则 3: 提取厂商标签
+  rule {
+    source_labels = ["vendor"]
+    target_label  = "vendor"
+  }
+
+  // 标签重写规则 4: 提取型号标签
+  rule {
+    source_labels = ["model"]
+    target_label  = "model"
+  }
+
+  // 标签重写规则 5: 提取位置标签
+  rule {
+    source_labels = ["location"]
+    target_label  = "location"
+  }
+}
+
+// Prometheus 采集器 - Redfish 硬件监控
+prometheus.scrape "redfish" {
+  // 使用 Redfish 目标配置
+  targets    = [discovery.relabel.redfish_targets.output]
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  // 作业名称
+  job_name = "redfish"
+
+  // 采集间隔（默认 60s）
+  // 硬件指标变化较慢，可以设置为 60s-120s
+  scrape_interval = "60s"
+
+  // 采集超时时间（默认 30s）
+  scrape_timeout = "30s"
+
+  // 指标路径（默认 /metrics）
+  // Redfish Exporter 暴露的指标路径
+  metrics_path = "/metrics"
+
+  // 协议（默认 http）
+  // Redfish 使用 HTTPS 协议
+  scheme = "https"
+
+  // TLS 配置
+  tls_config {
+    // 跳过证书验证（自签名证书时使用）
+    // 生产环境建议使用有效证书
+    insecure_skip_verify = true
+
+    // CA 证书路径（可选）
+    # ca_file = "/etc/ssl/certs/redfish-ca.pem"
+
+    // 客户端证书（可选）
+    # cert_file = "/etc/ssl/certs/client.pem"
+    # key_file = "/etc/ssl/certs/client-key.pem"
+  }
+
+  // 基本认证
+  // 环境变量：REDFISH_USERNAME, REDFISH_PASSWORD
+  basic_auth {
+    username = "admin"
+    password = "YourPassword"
+  }
+
+  // 自定义标签（可选）
+  labels = {
+    env = "production",
+    datacenter = "dc1",
+    team = "hardware"
+  }
+}
+
+// ============================================================================
+// 10. 网络设备日志采集
+// ============================================================================
+
+// 网络设备日志采集 - 从文件中读取网络设备日志
+loki.source.file "network_device_logs" {
+  // 目标地址（用于标签）
+  targets    = [{__address__ = "localhost"}]
+
+  // 采集的日志文件路径
+  // 这些日志由 Syslog-NG 接收并写入文件
+  paths      = [
+    "/var/log/network-devices/*.log",
+    "/var/log/network-devices/switches/*.log",
+    "/var/log/network-devices/routers/*.log",
+    "/var/log/network-devices/firewalls/*.log",
+  ]
+
+  // 采集间隔（默认 1s）
+  polling_interval = "1s"
+
+  // 标签重写规则 1: 添加作业标签
+  relabel {
+    source_labels = ["__path__"]
+    target_label  = "job"
+    replacement  = "network-devices"
+  }
+
+  // 标签重写规则 2: 提取设备名称
+  // 从文件路径中提取设备名称
+  // 示例：/var/log/network-devices/switch-core-01.log → switch-core-01
+  relabel {
+    source_labels = ["__path__"]
+    target_label  = "device"
+    regex        = "/var/log/network-devices/(.*)\\.log"
+    replacement  = "$1"
+  }
+
+  // 标签重写规则 3: 提取设备类型
+  // 从文件路径中提取设备类型
+  // 示例：/var/log/network-devices/switches/switch-core-01.log → switch
+  relabel {
+    source_labels = ["__path__"]
+    target_label  = "device_type"
+    regex        = "/var/log/network-devices/([^/]+)/.*"
+    replacement  = "$1"
+  }
+
+  // 转发到 Loki 写入器
+  forward_to = [loki.write.local_loki.receiver]
+}
+
+// 网络设备日志采集 - 按设备类型分类
+loki.source.file "switch_logs" {
+  targets    = [{__address__ = "localhost"}]
+
+  // 交换机日志
+  paths      = [
+    "/var/log/network-devices/switches/*.log",
+  ]
+
+  polling_interval = "1s"
+
+  relabel {
+    source_labels = ["__path__"]
+    target_label  = "job"
+    replacement  = "network-switches"
+  }
+
+  relabel {
+    source_labels = ["__path__"]
+    target_label  = "device"
+    regex        = "/var/log/network-devices/switches/(.*)\\.log"
+    replacement  = "$1"
+  }
+
+  relabel {
+    source_labels = ["__path__"]
+    target_label  = "device_type"
+    replacement  = "switch"
+  }
+
+  forward_to = [loki.write.local_loki.receiver]
+}
+
+loki.source.file "router_logs" {
+  targets    = [{__address__ = "localhost"}]
+
+  // 路由器日志
+  paths      = [
+    "/var/log/network-devices/routers/*.log",
+  ]
+
+  polling_interval = "1s"
+
+  relabel {
+    source_labels = ["__path__"]
+    target_label  = "job"
+    replacement  = "network-routers"
+  }
+
+  relabel {
+    source_labels = ["__path__"]
+    target_label  = "device"
+    regex        = "/var/log/network-devices/routers/(.*)\\.log"
+    replacement  = "$1"
+  }
+
+  relabel {
+    source_labels = ["__path__"]
+    target_label  = "device_type"
+    replacement  = "router"
+  }
+
+  forward_to = [loki.write.local_loki.receiver]
+}
+
+// ============================================================================
+// 11. 日志解析和标签提取（高级用法）
+// ============================================================================
+
+// 日志解析器配置 - 从日志中提取结构化数据
+discovery.relabel "log_parser" {
+  targets = [{
+    __address__ = "localhost"
+  }]
+
+  // 标签重写规则 1: 提取文件名
+  rule {
+    source_labels = ["__path__"]
+    target_label  = "filename"
+    regex        = "/var/log/(.*)"
+    replacement  = "$1"
+  }
+
+  // 标签重写规则 2: 提取目录名
+  rule {
+    source_labels = ["__path__"]
+    target_label  = "directory"
+    regex        = "/var/log/([^/]+)/.*"
+    replacement  = "$1"
+  }
+}
+
+// 结构化日志采集 - 使用解析器提取字段
+loki.source.file "parsed_logs" {
+  targets    = [discovery.relabel.log_parser.output]
+
+  // 采集的日志文件路径
+  paths      = [
+    "/var/log/**/*.log",
+    "/var/log/syslog",
+    "/var/log/messages"
+  ]
+
+  // 采集间隔
+  polling_interval = "1s"
+
+  // 日志解析器 - JSON 格式
+  // 如果日志是 JSON 格式，可以使用 json 解析器
+  # parser {
+  #   json = {}
+  # }
+
+  // 日志解析器 - 正则表达式
+  // 从日志中提取时间戳、日志级别、消息等字段
+  // 示例日志格式：2025-01-15T10:30:15Z INFO This is a log message
+  parser {
+    regex = `^(?P<timestamp>\S+\s+\S+)\s+(?P<level>\w+)\s+(?P<message>.*)$`
+  }
+
+  // 日志解析器 - Logfmt 格式
+  // 如果日志是 Logfmt 格式，可以使用 logfmt 解析器
+  # parser {
+  #   logfmt = {}
+  # }
+
+  // 转发到 Loki 写入器
+  forward_to = [loki.write.local_loki.receiver]
+}
+
+// ============================================================================
+// 12. 指标转换和重命名（高级用法）
+// ============================================================================
+
+// 指标重命名 - 修改指标名称或标签
+// 注意：这个配置仅用于演示，实际使用时需要谨慎
+prometheus.relabel "metric_rename" {
+  // 要重命名的指标来源
+  targets    = [prometheus.scrape.node_exporter.output]
+
+  // 标签重写规则 1: 重命名指标名称
+  // 将所有 node_ 开头的指标改为 host_ 开头
+  // 示例：node_cpu_usage → host_cpu_usage
+  rule {
+    source_labels = ["__name__"]
+    regex         = "node_(.*)"
+    target_label  = "__name__"
+    replacement   = "host_$1"
+  }
+
+  // 标签重写规则 2: 添加自定义标签
+  // 为所有指标添加 datacenter 标签
+  rule {
+    target_label  = "datacenter"
+    replacement   = "dc1"
+  }
+
+  // 标签重写规则 3: 删除不需要的标签
+  # rule {
+  #   regex         = "temp_label"
+  #   action        = "labeldrop"
+  # }
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// 指标过滤 - 只保留需要的指标
+prometheus.relabel "metric_filter" {
+  // 要过滤的指标来源
+  targets    = [prometheus.scrape.node_exporter.output]
+
+  // 标签重写规则 1: 只保留 CPU 相关指标
+  rule {
+    source_labels = ["__name__"]
+    regex         = "node_cpu.*"
+    action        = "keep"
+  }
+
+  // 标签重写规则 2: 删除不需要的指标
+  # rule {
+  #   source_labels = ["__name__"]
+  #   regex         = "node_time.*"
+  #   action        = "drop"
+  # }
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// ============================================================================
+// 13. 告警规则（Alloy 支持本地告警规则）
+// ============================================================================
+// 注意：建议继续使用 vmalert + Alertmanager 进行告警管理
+// Alloy 的告警规则功能相对简单，不如 vmalert 强大
+
+// 本地告警规则示例
+prometheus.rules "local_alerts" {
+  // 告警规则文件路径
+  // 可以加载多个告警规则文件
+  rule_files = [
+    "/etc/prometheus/rules/*.yml",
+    "/etc/prometheus/rules/*.yaml"
+  ]
+
+  // 告警规则 1: Node Exporter 宕机告警
+  alert {
+    // 告警表达式
+    expr = "up{job='node-exporter'} == 0"
+
+    // 持续时间（默认 0s）
+    // 指标持续满足条件的时间
+    for  = "5m"
+
+    // 告警标签
+    labels = {
+      severity = "critical"
+      team     = "ops"
+    }
+
+    // 告警注释
+    annotations = {
+      summary     = "Node exporter is down"
+      description = "Node exporter on {{ $labels.instance }} has been down for more than 5 minutes."
+    }
+  }
+
+  // 告警规则 2: CPU 使用率过高告警
+  alert {
+    expr = "100 - (avg by(instance) (irate(node_cpu_seconds_total{mode='idle'}[5m])) * 100) > 80"
+    for  = "10m"
+
+    labels = {
+      severity = "warning"
+      team     = "ops"
+    }
+
+    annotations = {
+      summary     = "High CPU usage detected"
+      description = "CPU usage on {{ $labels.instance }} is above 80% for more than 10 minutes."
+    }
+  }
+
+  // 告警规则 3: 内存使用率过高告警
+  alert {
+    expr = "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85"
+    for  = "10m"
+
+    labels = {
+      severity = "warning"
+      team     = "ops"
+    }
+
+    annotations = {
+      summary     = "High memory usage detected"
+      description = "Memory usage on {{ $labels.instance }} is above 85% for more than 10 minutes."
+    }
+  }
+
+  // 告警规则 4: 磁盘使用率过高告警
+  alert {
+    expr = "(node_filesystem_size_bytes{fstype!='tmpfs'} - node_filesystem_free_bytes{fstype!='tmpfs'}) / node_filesystem_size_bytes{fstype!='tmpfs'} * 100 > 80"
+    for  = "15m"
+
+    labels = {
+      severity = "warning"
+      team     = "ops"
+    }
+
+    annotations = {
+      summary     = "High disk usage detected"
+      description = "Disk usage on {{ $labels.instance }} ({{ $labels.mountpoint }}) is above 80% for more than 15 minutes."
+    }
+  }
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+}
+
+// ============================================================================
+// 14. 健康检查和自监控
+// ============================================================================
+
+// Alloy 自监控 - 监控 Alloy 自身的运行状态
+prometheus.scrape "alloy_self" {
+  // Alloy 自监控端点
+  // 默认地址：127.0.0.1:12345
+  // 暴露指标：
+  //   - alloy_build_info: Alloy 版本信息
+  //   - alloy_config_last_reload_successful: 配置重载是否成功
+  //   - alloy_config_last_reload_success_timestamp_seconds: 配置重载成功时间
+  //   - alloy_active_targets: 活跃的采集目标数
+  //   - alloy_scrape_duration_seconds: 采集耗时
+  //   - alloy_scrape_samples_total: 采集的样本总数
+  //   - alloy_remote_write_samples_total: 远程写入的样本总数
+  targets    = [{
+    __address__ = "127.0.0.1:12345"
+  }]
+
+  // 转发到 VictoriaMetrics
+  forward_to = [prometheus.remote_write.victoriametrics.receiver]
+
+  // 作业名称
+  job_name = "alloy"
+
+  // 采集间隔（默认 15s）
+  scrape_interval = "15s"
+
+  // 采集超时时间
+  scrape_timeout = "10s"
+}
+
+// ============================================================================
+// 15. 环境变量配置（可选）
+// ============================================================================
+// Alloy 支持通过环境变量动态配置
+// 使用方式：${ENV_VAR_NAME}
+// 示例：
+//   endpoint = "${VCENTER_URL}"
+//   username = "${VCENTER_USERNAME}"
+//   password = "${VCENTER_PASSWORD}"
+
+// 常用环境变量：
+//   - VCENTER_URL: vCenter 地址
+//   - VCENTER_USERNAME: vCenter 用户名
+//   - VCENTER_PASSWORD: vCenter 密码
+//   - GNMI_USERNAME: gNMI 用户名
+//   - GNMI_PASSWORD: gNMI 密码
+//   - SNMP_COMMUNITY: SNMP community 字符串
+//   - REDFISH_USERNAME: Redfish 用户名
+//   - REDFISH_PASSWORD: Redfish 密码
+//   - GRAFANA_API_KEY: Grafana API 密钥（可选）
+
+// ============================================================================
+// 配置说明
+// ============================================================================
+//
+// 1. 配置文件语法：
+//    - 使用 Alloy 配置语言（类似 HCL）
+//    - 支持注释：// 单行注释
+//    - 支持嵌套块
+//
+// 2. 配置验证：
+//    - 启动前验证：alloy fmt config.alloy
+//    - 运行时验证：查看日志输出
+//
+// 3. 配置重载：
+//    - 自动重载：修改配置文件后，Alloy 会自动重载
+//    - 手动重载：发送 SIGHUP 信号
+//
+// 4. 性能优化：
+//    - 合理设置采集间隔（避免过于频繁）
+//    - 使用批量写入（减少网络开销）
+//    - 配置队列参数（控制发送速率）
+//
+// 5. 调试技巧：
+//    - 查看日志：docker logs -f alloy
+//    - 查看指标：curl http://localhost:12345/metrics
+//    - 查看配置：curl http://localhost:12345/config
+//
+// 6. 常见问题：
+//    - 连接失败：检查网络和防火墙
+//    - 认证失败：检查用户名和密码
+//    - 采集超时：增加 timeout 参数
+//    - 内存不足：减少采集目标或增加内存
+//
+// ============================================================================
