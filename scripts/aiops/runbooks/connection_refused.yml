@@ -1,0 +1,70 @@
+name: "Connection Refused - Network Diagnostics"
+description: "Runbook for handling connection refused errors"
+version: "1.0"
+author: "AIOps System"
+
+conditions:
+  metric_name: "connection_refused"
+  severity: "high"
+
+steps:
+  - name: "Check listening ports"
+    type: "command"
+    command: "ss -tlnp"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check firewall rules"
+    type: "command"
+    command: "iptables -L -n | head -50"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check service status"
+    type: "command"
+    command: "systemctl status {service_name} | head -20"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check port accessibility"
+    type: "command"
+    command: "nc -zv localhost {port}"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check connection queue"
+    type: "command"
+    command: "ss -tlnp | grep {port}"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check error logs"
+    type: "command"
+    command: "journalctl -u {service_name} -n 50 --no-pager"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Restart service"
+    type: "command"
+    command: "systemctl restart {service_name}"
+    timeout: 30
+    stop_on_failure: false
+
+  - name: "Verify service listening"
+    type: "command"
+    command: "ss -tlnp | grep {port}"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Test connection"
+    type: "http_request"
+    url: "http://localhost:{port}/health"
+    method: "GET"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Log connection recovery"
+    type: "command"
+    command: "echo 'Connection refused recovery at {timestamp}' >> /var/log/aiops-connection-recovery.log"
+    timeout: 5
+    stop_on_failure: false

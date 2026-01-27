@@ -1,0 +1,33 @@
+name: "CPU High - Investigation and Mitigation"
+description: "Runbook for handling high CPU usage anomalies"
+version: "1.0"
+author: "AIOps System"
+
+conditions:
+  metric_name: "cpu_usage"
+  severity: "high"
+
+steps:
+  - name: "Check top processes"
+    type: "command"
+    command: "top -b -n 1 | head -20"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check load average"
+    type: "command"
+    command: "uptime"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check CPU core count"
+    type: "command"
+    command: "nproc"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Log CPU usage snapshot"
+    type: "command"
+    command: "echo 'CPU usage at {timestamp}' >> /var/log/aiops-cpu-events.log"
+    timeout: 5
+    stop_on_failure: false

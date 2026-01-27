@@ -1,0 +1,69 @@
+name: "Disk I/O Wait High - Performance Optimization"
+description: "Runbook for handling high disk I/O wait"
+version: "1.0"
+author: "AIOps System"
+
+conditions:
+  metric_name: "disk_iowait"
+  severity: "high"
+
+steps:
+  - name: "Check disk I/O statistics"
+    type: "command"
+    command: "iostat -x 1 5"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check disk usage"
+    type: "command"
+    command: "df -h"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check disk latency"
+    type: "command"
+    command: "ioping -c 10 /"
+    timeout: 20
+    stop_on_failure: false
+
+  - name: "Check top I/O processes"
+    type: "command"
+    command: "iotop -b -o -n 5 || pidstat -d 1 5"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check slow queries"
+    type: "command"
+    command: "mysqladmin processlist 2>/dev/null | head -20 || psql -c 'SELECT query, state FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start LIMIT 20' 2>/dev/null"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check write cache settings"
+    type: "command"
+    command: "hdparm -W /dev/sda 2>/dev/null || echo 'Cannot check write cache'"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Enable write cache if safe"
+    type: "command"
+    command: "hdparm -W1 /dev/sda 2>/dev/null || echo 'Write cache already enabled or cannot enable'"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Restart heavy I/O services"
+    type: "command"
+    command: "systemctl restart {heavy_io_service}"
+    timeout: 30
+    stop_on_failure: false
+
+  - name: "Clear disk cache"
+    type: "command"
+    command: "sync && echo 3 > /proc/sys/vm/drop_caches"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Log I/O recovery"
+    type: "command"
+    command: "echo 'Disk I/O wait recovery at {timestamp}' >> /var/log/aiops-io-recovery.log"
+    timeout: 5
+    stop_on_failure: false

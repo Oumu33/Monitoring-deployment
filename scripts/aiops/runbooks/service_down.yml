@@ -1,0 +1,46 @@
+name: "Service Down - Restart and Recovery"
+description: "Runbook for handling service down anomalies"
+version: "1.0"
+author: "AIOps System"
+
+conditions:
+  metric_name: "service_down"
+  severity: "critical"
+
+steps:
+  - name: "Check service status"
+    type: "command"
+    command: "systemctl status {service_name}"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check service logs"
+    type: "command"
+    command: "journalctl -u {service_name} -n 50 --no-pager"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Attempt to restart service"
+    type: "command"
+    command: "systemctl restart {service_name}"
+    timeout: 30
+    stop_on_failure: false
+
+  - name: "Verify service is running"
+    type: "command"
+    command: "systemctl is-active {service_name}"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check service health endpoint"
+    type: "http_request"
+    url: "http://localhost:{port}/health"
+    method: "GET"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Log service recovery"
+    type: "command"
+    command: "echo 'Service {service_name} recovery attempted at {timestamp}' >> /var/log/aiops-service-recovery.log"
+    timeout: 5
+    stop_on_failure: false

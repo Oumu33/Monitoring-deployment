@@ -1,0 +1,69 @@
+name: "Swap Usage High - Memory Optimization"
+description: "Runbook for handling high swap usage"
+version: "1.0"
+author: "AIOps System"
+
+conditions:
+  metric_name: "swap_usage"
+  severity: "high"
+
+steps:
+  - name: "Check swap usage"
+    type: "command"
+    command: "free -h"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check swap details"
+    type: "command"
+    command: "swapon --show"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check memory usage by process"
+    type: "command"
+    command: "ps aux --sort=-%mem | head -20"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check top memory consumers"
+    type: "command"
+    command: "smem -k -c name,pss | head -20 || ps aux --sort=-rss | head -20"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Clear page cache"
+    type: "command"
+    command: "sync && echo 1 > /proc/sys/vm/drop_caches"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Clear dentries and inodes"
+    type: "command"
+    command: "sync && echo 2 > /proc/sys/vm/drop_caches"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Clear page cache, dentries and inodes"
+    type: "command"
+    command: "sync && echo 3 > /proc/sys/vm/drop_caches"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Kill high memory processes"
+    type: "command"
+    command: "ps aux --sort=-%mem | awk 'NR>1 && $4>50 {print $2}' | head -5 | xargs -r kill -15"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Restart high memory services"
+    type: "command"
+    command: "systemctl restart {high_memory_service}"
+    timeout: 30
+    stop_on_failure: false
+
+  - name: "Log swap recovery"
+    type: "command"
+    command: "echo 'Swap usage recovery at {timestamp}' >> /var/log/aiops-swap-recovery.log"
+    timeout: 5
+    stop_on_failure: false

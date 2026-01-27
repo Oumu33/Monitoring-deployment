@@ -1,0 +1,57 @@
+name: "HTTP 5xx Errors - Investigation and Recovery"
+description: "Runbook for handling high HTTP 5xx error rates"
+version: "1.0"
+author: "AIOps System"
+
+conditions:
+  metric_name: "http_5xx_errors"
+  severity: "high"
+
+steps:
+  - name: "Check web server status"
+    type: "command"
+    command: "systemctl status nginx apache2 | head -20"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check web server error logs"
+    type: "command"
+    command: "tail -100 /var/log/nginx/error.log 2>/dev/null || tail -100 /var/log/apache2/error.log 2>/dev/null"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check backend service status"
+    type: "command"
+    command: "systemctl status {backend_service} | head -20"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check database connections"
+    type: "command"
+    command: "ps aux | grep -E 'mysql|postgres|mongodb' | grep -v grep"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check slow queries"
+    type: "command"
+    command: "mysqladmin processlist 2>/dev/null | head -20 || psql -c 'SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start LIMIT 20' 2>/dev/null"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Restart web server if needed"
+    type: "command"
+    command: "systemctl reload nginx || systemctl reload apache2"
+    timeout: 30
+    stop_on_failure: false
+
+  - name: "Clear connection pool"
+    type: "command"
+    command: "pkill -f {application_name} || echo 'No application processes to kill'"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Log HTTP error recovery"
+    type: "command"
+    command: "echo 'HTTP 5xx error recovery at {timestamp}' >> /var/log/aiops-http-recovery.log"
+    timeout: 5
+    stop_on_failure: false

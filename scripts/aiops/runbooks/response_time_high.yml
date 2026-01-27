@@ -1,0 +1,76 @@
+name: "Response Time High - Performance Optimization"
+description: "Runbook for handling high response time anomalies"
+version: "1.0"
+author: "AIOps System"
+
+conditions:
+  metric_name: "response_time"
+  severity: "high"
+
+steps:
+  - name: "Check current response time"
+    type: "command"
+    command: "curl -o /dev/null -s -w '%{time_total}\n' {service_url}"
+    timeout: 30
+    stop_on_failure: false
+
+  - name: "Check system load"
+    type: "command"
+    command: "uptime"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check CPU usage"
+    type: "command"
+    command: "top -b -n 1 | head -20"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check memory usage"
+    type: "command"
+    command: "free -h"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check disk I/O"
+    type: "command"
+    command: "iostat -x 1 5"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check database slow queries"
+    type: "command"
+    command: "mysqladmin processlist 2>/dev/null | head -20 || psql -c 'SELECT query, state, wait_event_type FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start LIMIT 20' 2>/dev/null"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check cache hit rate"
+    type: "command"
+    command: "redis-cli info stats | grep keyspace_hits || echo 'Redis not available'"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Restart application cache"
+    type: "command"
+    command: "systemctl restart {cache_service} || echo 'Cache service not found'"
+    timeout: 30
+    stop_on_failure: false
+
+  - name: "Clear application cache"
+    type: "http_request"
+    url: "http://localhost:{port}/admin/cache/clear"
+    method: "POST"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Scale up service instances"
+    type: "command"
+    command: "kubectl scale deployment {deployment_name} --replicas={new_replicas} || echo 'Kubernetes not available'"
+    timeout: 30
+    stop_on_failure: false
+
+  - name: "Log performance recovery"
+    type: "command"
+    command: "echo 'Response time recovery at {timestamp}' >> /var/log/aiops-performance-recovery.log"
+    timeout: 5
+    stop_on_failure: false

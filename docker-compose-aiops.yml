@@ -1,0 +1,267 @@
+version: '3.8'
+
+volumes:
+  neo4j-data:
+  zookeeper-data:
+  zookeeper-logs:
+  kafka-data:
+  redis-data:
+  flink-checkpoints:
+
+services:
+  # ============================================
+  # Stage 2: Graph Database (Neo4j)
+  # ============================================
+  # Neo4j - Graph Database
+  # Stores the entity-relationship graph of our infrastructure (devices, services, etc.)
+  neo4j:
+    image: neo4j:5.14.0
+    container_name: neo4j
+    ports:
+      - "7474:7474" # Neo4j Browser UI
+      - "7687:7687" # Bolt protocol
+    volumes:
+      - neo4j-data:/data
+    environment:
+      - NEO4J_AUTH=neo4j/password123 # Default user/password. CHANGE IN PRODUCTION!
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Graph Builder - Populates Neo4j with infrastructure data
+  # This service runs once to populate the graph from config files, then exits.
+  graph-builder:
+    build:
+      context: ./scripts/aiops
+    container_name: graph-builder
+    depends_on:
+      - neo4j
+    volumes:
+      - ./config/topology/devices.yml:/etc/topology/devices.yml:ro
+      - ./data/topology:/data/topology:ro
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password123
+    networks:
+      - monitoring
+    restart: "no"
+
+  # ============================================
+  # Stage 3: AIOps Core Infrastructure
+  # ============================================
+
+  # Zookeeper - Required for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+      - ZOOKEEPER_TICK_TIME=2000
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Kafka - High-throughput distributed messaging system
+  # Used for streaming metrics, logs, and traces data
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Redis - In-memory data store for caching and state management
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Flink JobManager - Stream processing engine coordinator
+  flink-jobmanager:
+    image: flink:1.18-scala_2.12-java11
+    container_name: flink-jobmanager
+    ports:
+      - "8081:8081" # Flink Web UI
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        state.backend: filesystem
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+        rest.port: 8081
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Flink TaskManager - Stream processing worker nodes
+  flink-taskmanager:
+    image: flink:1.18-scala_2.12-java11
+    container_name: flink-taskmanager
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        state.backend: filesystem
+        state.checkpoints.dir: file:///opt/flink/checkpoints
+    volumes:
+      - flink-checkpoints:/opt/flink/checkpoints
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # ============================================
+  # Stage 3: AIOps Core Services
+  # ============================================
+
+  # Data Ingestion Service - Collects metrics, logs, and traces
+  # Pulls data from VictoriaMetrics, Loki, and Tempo
+  data-ingestion:
+    build:
+      context: ./scripts/aiops
+      dockerfile: Dockerfile.data-ingestion
+    container_name: data-ingestion
+    depends_on:
+      - kafka
+      - redis
+    volumes:
+      - ./scripts/aiops/config:/app/config:ro
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - VICTORIAMETRICS_URL=http://victoriametrics:8428
+      - LOKI_URL=http://loki:3100
+      - TEMPO_URL=http://tempo:3200
+      - INGESTION_INTERVAL=30s
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Anomaly Detection Service - Statistical and ML-based detection
+  anomaly-detection:
+    build:
+      context: ./scripts/aiops
+      dockerfile: Dockerfile.anomaly-detection
+    container_name: anomaly-detection
+    depends_on:
+      - kafka
+      - redis
+      - neo4j
+    volumes:
+      - ./scripts/aiops/config:/app/config:ro
+      - ./scripts/aiops/models:/app/models
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password123
+      - DETECTION_WINDOW=5m
+      - ANOMALY_THRESHOLD=2.0
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Root Cause Analysis Service - Graph-based causal inference
+  root-cause-analysis:
+    build:
+      context: ./scripts/aiops
+      dockerfile: Dockerfile.rca
+    container_name: root-cause-analysis
+    depends_on:
+      - kafka
+      - redis
+      - neo4j
+    volumes:
+      - ./scripts/aiops/config:/app/config:ro
+      - ./scripts/aiops/runbooks:/app/runbooks
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password123
+      - CORRELATION_WINDOW=10m
+      - MAX_GRAPH_DEPTH=5
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Insights & Action Service - Generates actionable insights
+  insights-action:
+    build:
+      context: ./scripts/aiops
+      dockerfile: Dockerfile.insights
+    container_name: insights-action
+    depends_on:
+      - kafka
+      - redis
+      - neo4j
+      - alertmanager
+    volumes:
+      - ./scripts/aiops/config:/app/config:ro
+      - ./scripts/aiops/runbooks:/app/runbooks
+      - ./scripts/aiops/templates:/app/templates
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password123
+      - ALERTMANAGER_URL=http://alertmanager:9093
+      - GRAFANA_URL=http://grafana:3000
+      - LOKI_URL=http://loki:3100
+      - VICTORIAMETRICS_URL=http://victoriametrics:8428
+      # Notification channels (optional - set your webhook URLs)
+      # - DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+      # - DINGTALK_SECRET=YOUR_SECRET
+      # - FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_HOOK
+      # - WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+networks:
+  monitoring:
+    external: true
+    name: monitoring-deployment-main_monitoring

@@ -1,0 +1,136 @@
+# AIOps Configuration File
+# This file contains configuration for all AIOps components
+
+# Data Ingestion Configuration
+data_ingestion:
+  enabled: true
+  interval: 30  # seconds
+  metrics:
+    enabled: true
+    sources:
+      - name: victoria_metrics
+        url: "http://victoriametrics:8428"
+    queries:
+      cpu_usage: 'avg by (instance) (100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100))'
+      memory_usage: 'avg by (instance) ((node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100)'
+      disk_usage: 'avg by (instance, mountpoint) ((node_filesystem_size_bytes - node_filesystem_avail_bytes) / node_filesystem_size_bytes * 100)'
+      network_in: 'sum by (instance) (rate(node_network_receive_bytes_total[5m]))'
+      network_out: 'sum by (instance) (rate(node_network_transmit_bytes_total[5m]))'
+
+  logs:
+    enabled: true
+    sources:
+      - name: loki
+        url: "http://loki:3100"
+    query: '{level=~"error|warn|warning"}'
+    limit: 100
+
+  traces:
+    enabled: true
+    sources:
+      - name: tempo
+        url: "http://tempo:3200"
+    min_duration: 1000000  # 1ms in microseconds
+    limit: 50
+
+# Anomaly Detection Configuration
+anomaly_detection:
+  enabled: true
+  detection_window: 300  # 5 minutes in seconds
+  anomaly_threshold: 2.0
+
+  detectors:
+    - name: arima
+      enabled: true
+      order: [1, 1, 1]
+
+    - name: ewma
+      enabled: true
+      alpha: 0.3
+      threshold: 3.0
+
+    - name: z_score
+      enabled: true
+      threshold: 3.0
+
+  rules:
+    - name: cpu_high
+      enabled: true
+      threshold: 90
+      duration: 300  # 5 minutes
+
+    - name: memory_high
+      enabled: true
+      threshold: 95
+
+    - name: disk_high
+      enabled: true
+      threshold: 90
+
+# Root Cause Analysis Configuration
+root_cause_analysis:
+  enabled: true
+  correlation_window: 600  # 10 minutes in seconds
+  max_graph_depth: 5
+
+  graph_analysis:
+    enabled: true
+    metrics:
+      - degree_centrality
+      - betweenness_centrality
+      - closeness_centrality
+
+  inference:
+    method: hybrid  # hybrid, heuristic, ml
+    confidence_threshold: 0.7
+
+# Insights & Action Configuration
+insights_action:
+  enabled: true
+
+  grafana:
+    enabled: true
+    url: "http://grafana:3000"
+    # Add API key for authenticated access
+    # api_key: "your-grafana-api-key"
+
+  alertmanager:
+    enabled: true
+    url: "http://alertmanager:9093"
+
+  runbooks:
+    enabled: true
+    auto_execute: false  # Set to true to automatically execute runbooks
+    directory: "/app/runbooks"
+
+# Storage Configuration
+storage:
+  redis:
+    enabled: true
+    host: "redis"
+    port: 6379
+
+  neo4j:
+    enabled: true
+    uri: "bolt://neo4j:7687"
+    user: "neo4j"
+    password: "password123"
+
+# Messaging Configuration
+messaging:
+  kafka:
+    enabled: true
+    bootstrap_servers: "kafka:9092"
+    topics:
+      metrics: "aiops.metrics"
+      logs: "aiops.logs"
+      traces: "aiops.traces"
+      events: "aiops.events"
+      anomalies: "aiops.anomalies"
+      rca_results: "aiops.rca_results"
+      actions: "aiops.actions"
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "json"  # json, text

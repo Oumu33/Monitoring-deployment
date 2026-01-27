@@ -1,0 +1,45 @@
+name: "Network High - Investigation and Mitigation"
+description: "Runbook for handling high network traffic anomalies"
+version: "1.0"
+author: "AIOps System"
+
+conditions:
+  metric_name: "network_in|network_out"
+  severity: "high"
+
+steps:
+  - name: "Check network interfaces"
+    type: "command"
+    command: "ip addr show"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check network statistics"
+    type: "command"
+    command: "cat /proc/net/dev"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check active connections"
+    type: "command"
+    command: "ss -s"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check top connections by IP"
+    type: "command"
+    command: "ss -nt | awk '{print $5}' | cut -d: -f1 | sort | uniq -c | sort -nr | head -10"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Check network errors"
+    type: "command"
+    command: "ip -s link show"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Log network anomaly"
+    type: "command"
+    command: "echo 'Network anomaly at {timestamp}' >> /var/log/aiops-network-events.log"
+    timeout: 5
+    stop_on_failure: false

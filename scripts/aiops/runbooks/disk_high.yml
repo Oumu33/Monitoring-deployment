@@ -1,0 +1,39 @@
+name: "Disk High - Cleanup and Optimization"
+description: "Runbook for handling high disk usage anomalies"
+version: "1.0"
+author: "AIOps System"
+
+conditions:
+  metric_name: "disk_usage"
+  severity: "high"
+
+steps:
+  - name: "Check disk space"
+    type: "command"
+    command: "df -h"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Find large files (>100MB)"
+    type: "command"
+    command: "find / -type f -size +100M -exec ls -lh {} + 2>/dev/null | head -20"
+    timeout: 30
+    stop_on_failure: false
+
+  - name: "Clean old logs (7+ days)"
+    type: "command"
+    command: "find /var/log -type f -name '*.log' -mtime +7 -delete"
+    timeout: 60
+    stop_on_failure: false
+
+  - name: "Clean old journal logs"
+    type: "command"
+    command: "journalctl --vacuum-time=7d"
+    timeout: 60
+    stop_on_failure: false
+
+  - name: "Clean apt cache"
+    type: "command"
+    command: "apt-get autoremove -y && apt-get clean"
+    timeout: 60
+    stop_on_failure: false

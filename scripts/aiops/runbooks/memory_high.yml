@@ -1,0 +1,39 @@
+name: "Memory High - Investigation and Cleanup"
+description: "Runbook for handling high memory usage anomalies"
+version: "1.0"
+author: "AIOps System"
+
+conditions:
+  metric_name: "memory_usage"
+  severity: "high"
+
+steps:
+  - name: "Check memory usage"
+    type: "command"
+    command: "free -h"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check swap usage"
+    type: "command"
+    command: "swapon --show"
+    timeout: 5
+    stop_on_failure: false
+
+  - name: "Check top memory consumers"
+    type: "command"
+    command: "ps aux --sort=-%mem | head -10"
+    timeout: 10
+    stop_on_failure: false
+
+  - name: "Clean apt cache"
+    type: "command"
+    command: "apt-get clean"
+    timeout: 30
+    stop_on_failure: false
+
+  - name: "Clear page cache"
+    type: "command"
+    command: "sync && echo 1 > /proc/sys/vm/drop_caches"
+    timeout: 5
+    stop_on_failure: false
