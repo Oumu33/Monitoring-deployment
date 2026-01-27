@@ -1,0 +1,10 @@
+flask
+requests
+
+# --- OpenTelemetry Packages ---
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-proto
+opentelemetry-instrumentation-flask
+opentelemetry-instrumentation-requests
+opentelemetry-exporter-otlp-proto-grpc

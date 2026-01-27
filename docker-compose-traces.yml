@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # OpenTelemetry Collector
+  # Receives telemetry data (traces, metrics, logs) from applications
+  # and exports it to the appropriate backend (e.g., Tempo, Loki, VictoriaMetrics).
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.90.1
+    container_name: otel-collector
+    command: [--config=/etc/otel-collector.yml]
+    volumes:
+      - ./config/otel/otel-collector.yml:/etc/otel-collector.yml
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    networks:
+      - default
+    restart: unless-stopped
+
+  # Grafana Tempo
+  # The backend for storing and querying distributed traces.
+  tempo:
+    image: grafana/tempo:2.3.1
+    container_name: tempo
+    command:
+      - -search.enabled=true
+      - -storage.trace.backend=local
+      - -storage.trace.local.path=/var/tempo
+      - -auth.enabled=false
+      - -server.http-listen-port=3200
+      - -distributor.otlp-insecure=true # Allows receiving traces from OTel Collector via insecure gRPC
+    volumes:
+      - ./data/tempo:/var/tempo
+    ports:
+      - "3200:3200" # Tempo UI & API
+      # Port 4317 is used internally by otel-collector, no need to expose to host
+    networks:
+      - default
+    restart: unless-stopped
+
+  # Sample Application to generate traces
+  hello-app:
+    build: ./services/hello-app
+    container_name: hello-app
+    ports:
+      - "5001:5000" # Expose app on host port 5001
+    environment:
+      - SERVICE_NAME=hello-app
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+    networks:
+      - default
+    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge

@@ -175,7 +175,7 @@ services:
 
   # Redfish Exporter - 服务器硬件监控（统一方案）
   redfish-exporter:
-    image: jenningsloy318/redfish_exporter:latest
+    image: gportal/redfish_exporter:latest
     container_name: redfish-exporter
     ports:
       - "9610:9610"
@@ -226,7 +226,7 @@ services:
       - ./config/promtail/promtail-network.yml:/etc/promtail/promtail-network.yml:ro
       - /var/log:/var/log:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - network-device-logs:/var/log/network-devices:ro
+      - network-device-logs:/var/log/network-devices
     command: -config.file=/etc/promtail/promtail.yml -config.expand-env=true
     restart: unless-stopped
     networks:

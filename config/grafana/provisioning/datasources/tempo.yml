@@ -1,0 +1,29 @@
+# ===================================================================
+# Grafana Tempo 数据源配置
+# 自动添加 Tempo 数据源到 Grafana
+# ===================================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    uid: tempo # Critical for linking from other datasources like Loki
+    isDefault: false
+    version: 1
+    editable: true
+    jsonData:
+      serviceMap:
+        datasourceUid: 'victoriametrics' # Use VictoriaMetrics for service map nodes data
+      tracesToLogs:
+        datasourceUid: 'loki' # Link back from a trace to logs
+        tags: ['instance', 'pod', 'namespace']
+        mappedTags: [{ key: 'service.name', value: 'app' }]
+        spanStartTimeShift: '1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: true
+        filterBySpanID: false
+      nodeGraph:
+        enabled: true
