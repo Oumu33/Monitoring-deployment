@@ -20,6 +20,9 @@ from typing import Dict, List, Optional
 import redis
 from kafka import KafkaProducer
 
+# Import Identity Mapper
+from identity_mapper import IdentityMapper, EntityType
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +53,7 @@ class DataIngestionService:
         self.redis_client = None
         self.kafka_producer = None
         self.running = True
+        self.identity_mapper = None
 
     def connect_redis(self):
         """Connect to Redis for caching"""
@@ -61,6 +65,11 @@ class DataIngestionService:
             )
             self.redis_client.ping()
             logger.info(f"Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+
+            # Initialize Identity Mapper with Redis
+            self.identity_mapper = IdentityMapper(redis_client=self.redis_client)
+            logger.info("Identity Mapper initialized with Redis cache")
+
             return True
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
@@ -131,12 +140,25 @@ class DataIngestionService:
                     result = response.json()
                     if result.get('status') == 'success':
                         for metric in result.get('data', {}).get('result', []):
+                            metric_labels = metric.get('metric', {})
+                            instance = metric_labels.get('instance', 'unknown')
+
+                            # Use Identity Mapper to resolve entity
+                            entity_metadata = self.identity_mapper.resolve_prometheus_instance(
+                                instance, metric_labels
+                            )
+
                             metric_info = {
                                 'metric_name': metric_name,
-                                'labels': metric.get('metric', {}),
+                                'labels': metric_labels,
                                 'values': metric.get('values', []),
                                 'timestamp': datetime.now().isoformat(),
-                                'source': 'victoriametrics'
+                                'source': 'victoriametrics',
+                                # Add unified entity identifier
+                                'entity_id': entity_metadata.urn,
+                                'entity_type': entity_metadata.entity_type.value,
+                                'entity_name': entity_metadata.name,
+                                'entity_namespace': entity_metadata.namespace
                             }
                             metrics_data.append(metric_info)
 
@@ -186,13 +208,22 @@ class DataIngestionService:
             if result.get('status') == 'success':
                 for stream in result.get('data', {}).get('result', []):
                     stream_labels = stream.get('stream', {})
+
+                    # Use Identity Mapper to resolve entity
+                    entity_metadata = self.identity_mapper.resolve_loki_stream(stream_labels)
+
                     for value in stream.get('values', []):
                         log_entry = {
                             'timestamp': value[0],
                             'log_line': value[1],
                             'labels': stream_labels,
                             'source': 'loki',
-                            'collected_at': datetime.now().isoformat()
+                            'collected_at': datetime.now().isoformat(),
+                            # Add unified entity identifier
+                            'entity_id': entity_metadata.urn,
+                            'entity_type': entity_metadata.entity_type.value,
+                            'entity_name': entity_metadata.name,
+                            'entity_namespace': entity_metadata.namespace
                         }
                         logs_data.append(log_entry)
 

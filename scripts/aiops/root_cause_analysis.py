@@ -19,6 +19,12 @@ from kafka import KafkaConsumer, KafkaProducer
 from neo4j import GraphDatabase
 from collections import defaultdict, deque
 
+# Import Identity Mapper
+from identity_mapper import IdentityMapper
+
+# Import Graph Provider
+from graph_provider import CachedGraphProvider, get_graph_provider
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -44,8 +50,23 @@ TOPIC_RCA_RESULTS = 'aiops.rca_results'
 class GraphDependencyAnalyzer:
     """Analyzes dependencies in the infrastructure graph"""
 
-    def __init__(self, neo4j_driver):
+    def __init__(self, neo4j_driver, identity_mapper: IdentityMapper = None, use_cache: bool = True):
         self.driver = neo4j_driver
+        self.identity_mapper = identity_mapper
+        self.use_cache = use_cache
+        
+        # Initialize cached graph provider
+        if use_cache:
+            self.graph_provider = get_graph_provider(neo4j_driver, cache_ttl=300)
+            logger.info("GraphDependencyAnalyzer initialized with cached graph provider")
+        else:
+            self.graph_provider = None
+            logger.info("GraphDependencyAnalyzer initialized without cache (direct DB access)")
+        
+        # Performance metrics
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._db_queries = 0
 
     def get_upstream_dependencies(self, node_name: str, max_depth: int = 3) -> List[Dict]:
         """
@@ -126,15 +147,17 @@ class GraphDependencyAnalyzer:
         for node in nodes:
             G.add_node(node['name'], **node)
 
-        # Add edges
+        # Add edges with criticality weights
         query = """
         MATCH (a:Device)-[r:CONNECTS_TO]->(b:Device)
-        RETURN a.name AS source, b.name AS target
+        RETURN a.name AS source, b.name AS target, r.criticality AS criticality
         """
         with self.driver.session() as session:
             result = session.run(query)
             for record in result:
-                G.add_edge(record['source'], record['target'])
+                # 🔥 关键：将 criticality 加载为边的 'weight' 属性
+                criticality = record.get('criticality', 0.5)
+                G.add_edge(record['source'], record['target'], weight=criticality)
 
         # Calculate centrality metrics
         metrics = {}
@@ -176,6 +199,207 @@ class GraphDependencyAnalyzer:
             return path
         except nx.NetworkXNoPath:
             return None
+
+    def load_weighted_graph(self, directed: bool = True) -> nx.Graph:
+        """
+        Load the topology graph with criticality weights
+        
+        🔥 PERFORMANCE OPTIMIZATION: Uses cached graph when available
+        
+        Args:
+            directed: If True, returns DiGraph; otherwise returns Graph
+
+        Returns:
+            NetworkX graph with nodes and weighted edges
+        """
+        # 🔥 Try to use cached graph first
+        if self.use_cache and self.graph_provider:
+            import time
+            start_time = time.time()
+            
+            graph = self.graph_provider.get_graph()
+            
+            duration = time.time() - start_time
+            self._cache_hits += 1
+            
+            if duration < 0.001:  # Less than 1ms
+                logger.debug(f"✅ Cache hit! Graph loaded in {duration*1000:.2f}ms (from memory)")
+            else:
+                logger.info(f"✅ Graph loaded in {duration*1000:.2f}ms (from cache)")
+            
+            return graph
+        
+        # Fallback to direct database query
+        self._cache_misses += 1
+        self._db_queries += 1
+        
+        logger.debug("Cache miss. Loading graph from database...")
+        return self._load_weighted_graph_from_db(directed)
+
+    def _load_weighted_graph_from_db(self, directed: bool = True) -> nx.Graph:
+        """
+        Load the topology graph from Neo4j database (slow path)
+        
+        Args:
+            directed: If True, returns DiGraph; otherwise returns Graph
+
+        Returns:
+            NetworkX graph with nodes and weighted edges
+        """
+        import time
+        start_time = time.time()
+        
+        # Get all nodes
+        query = """
+        MATCH (d:Device)
+        RETURN d.name AS name, d.ip AS ip, d.type AS type, d.last_seen AS last_seen
+        """
+        with self.driver.session() as session:
+            result = session.run(query)
+            nodes = []
+            for record in result:
+                nodes.append({
+                    'name': record['name'],
+                    'ip': record['ip'],
+                    'type': record['type'],
+                    'last_seen': record['last_seen']
+                })
+
+        # Build graph
+        G = nx.DiGraph() if directed else nx.Graph()
+        for node in nodes:
+            G.add_node(node['name'], **node)
+
+        # Add edges with criticality weights
+        query = """
+        MATCH (a:Device)-[r:CONNECTS_TO]->(b:Device)
+        RETURN a.name AS source, b.name AS target,
+               r.criticality AS criticality,
+               r.source_port AS source_port,
+               r.target_port AS target_port
+        """
+        with self.driver.session() as session:
+            result = session.run(query)
+            for record in result:
+                criticality = record.get('criticality', 0.5)
+                G.add_edge(
+                    record['source'],
+                    record['target'],
+                    weight=criticality,  # 🔥 边权重 = criticality
+                    criticality=criticality,
+                    source_port=record.get('source_port'),
+                    target_port=record.get('target_port')
+                )
+
+        duration = time.time() - start_time
+        logger.info(f"⚠️ Graph loaded from DB in {duration*1000:.2f}ms (slow path)")
+        logger.info(f"Loaded weighted graph with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
+        
+        return G
+
+    def analyze_failure_propagation(self, target_node: str, anomalous_nodes: List[Dict], max_depth: int = 3) -> List[Dict]:
+        """
+        Analyze failure propagation using weighted graph
+
+        Implements "Multiplicative Propagation Chain" algorithm:
+        Root Cause Score = Path Score × Anomaly Score
+        Path Score = Product of edge criticalities along the path
+
+        Args:
+            target_node: Node experiencing the issue (e.g., Payment-Service)
+            anomalous_nodes: List of anomalous nodes with their scores
+            max_depth: Maximum path depth to consider
+
+        Returns:
+            List of candidates sorted by root cause score
+        """
+        # Load weighted graph
+        G = self.load_weighted_graph(directed=True)
+
+        candidates = []
+
+        for suspect in anomalous_nodes:
+            suspect_name = suspect.get('device', suspect.get('name', ''))
+            if not suspect_name:
+                continue
+
+            try:
+                # Find all paths from target to suspect
+                paths = list(nx.all_simple_paths(G, source=target_node, target=suspect_name, cutoff=max_depth))
+
+                if not paths:
+                    continue
+
+                # Calculate maximum path score
+                max_path_score = 0.0
+                best_path = None
+
+                for path in paths:
+                    # 🔥 核心算法：乘法传播链
+                    # 路径分数 = 边1权重 × 边2权重 × ...
+                    # 只要链路中有一个弱依赖 (0.2)，整体分数就会急剧下降
+                    path_score = 1.0
+                    for i in range(len(path) - 1):
+                        u, v = path[i], path[i+1]
+                        edge_data = G[u][v]
+                        criticality = edge_data.get('weight', edge_data.get('criticality', 0.5))
+                        path_score *= criticality
+
+                    if path_score > max_path_score:
+                        max_path_score = path_score
+                        best_path = path
+
+                # Get anomaly score
+                anomaly_score = suspect.get('anomaly_score', suspect.get('score', 0.5))
+                severity = suspect.get('severity', 'medium')
+                severity_score = {'low': 0.3, 'medium': 0.6, 'high': 1.0}.get(severity, 0.5)
+
+                # 🔥 最终得分 = 路径传播分 × 异常严重度分
+                final_score = max_path_score * severity_score
+
+                # 只保留得分超过阈值的候选者
+                if final_score > 0.3:
+                    candidates.append({
+                        'node': suspect_name,
+                        'score': final_score,
+                        'path_score': max_path_score,
+                        'anomaly_score': anomaly_score,
+                        'severity_score': severity_score,
+                        'path': best_path,
+                        'path_length': len(best_path) if best_path else 0,
+                        'reason': self._generate_propagation_reason(best_path, max_path_score, suspect)
+                    })
+
+            except nx.NetworkXNoPath:
+                # No path exists between target and suspect
+                continue
+            except Exception as e:
+                logger.error(f"Error analyzing propagation for {suspect_name}: {e}")
+                continue
+
+        # 按分数降序排列，得分最高的就是最可能的根因
+        return sorted(candidates, key=lambda x: x['score'], reverse=True)
+
+    def _generate_propagation_reason(self, path: List[str], path_score: float, suspect: Dict) -> str:
+        """Generate human-readable explanation for propagation analysis"""
+        if not path:
+            return "No path found"
+
+        suspect_name = suspect.get('device', suspect.get('name', 'unknown'))
+        path_str = " → ".join(path)
+
+        if path_score >= 0.8:
+            strength = "strong"
+        elif path_score >= 0.5:
+            strength = "moderate"
+        else:
+            strength = "weak"
+
+        return (
+            f"Root cause identified at '{suspect_name}' via {strength} dependency path: {path_str}. "
+            f"Path propagation score: {path_score:.2f}. "
+            f"High criticality edges indicate strong dependency impact."
+        )
 
     def get_device_neighbors(self, device_name: str) -> Dict[str, List[str]]:
         """
@@ -283,7 +507,16 @@ class AnomalyPropagationAnalyzer:
         Find propagation chain for an anomaly
         direction: 'upstream', 'downstream', or 'both'
         """
-        device_name = anomaly.get('labels', {}).get('instance', '').split(':')[0]
+        # Use unified entity_id instead of parsing instance
+        entity_id = anomaly.get('entity_id', '')
+        entity_name = anomaly.get('entity_name', anomaly.get('labels', {}).get('instance', '').split(':')[0])
+
+        # If entity_id is available, use Identity Mapper to get proper query
+        if entity_id and self.identity_mapper:
+            query_params = self.identity_mapper.urn_to_neo4j_query(entity_id)
+            device_name = query_params['params'].get('name', entity_name)
+        else:
+            device_name = entity_name
 
         propagation_chain = []
 
@@ -346,13 +579,92 @@ class RootCauseInferenceEngine:
     def __init__(self, graph_analyzer: GraphDependencyAnalyzer):
         self.graph_analyzer = graph_analyzer
 
-    def infer_root_cause(self, anomalies: List[Dict]) -> Dict:
+    def infer_root_cause(self, anomalies: List[Dict], target_node: str = None) -> Dict:
         """
-        Infer root cause from a set of anomalies
+        Infer root cause from a set of anomalies using weighted failure propagation
+
+        This implements the new intelligent analysis algorithm:
+        Root Cause Score = Path Score × Anomaly Score
+        Where Path Score = Product of edge criticalities along the path
+
+        Args:
+            anomalies: List of anomalies detected in the system
+            target_node: Optional target node (if not provided, use first anomaly's device)
+
+        Returns:
+            Root cause analysis result with confidence and explanation
         """
         if not anomalies:
             return {}
 
+        # Determine target node (the service experiencing the issue)
+        if not target_node:
+            first_anomaly = anomalies[0]
+            target_node = first_anomaly.get('entity_name', '')
+            if not target_node:
+                labels = first_anomaly.get('labels', {})
+                target_node = labels.get('instance', '').split(':')[0]
+
+        if not target_node:
+            logger.warning("No target node specified, using first anomaly device")
+            target_node = anomalies[0].get('labels', {}).get('instance', '').split(':')[0]
+
+        # Prepare anomalous nodes list
+        anomalous_nodes = []
+        for anomaly in anomalies:
+            device = anomaly.get('entity_name', anomaly.get('labels', {}).get('instance', '').split(':')[0])
+            if device and device != target_node:  # Exclude the target itself
+                anomalous_nodes.append({
+                    'device': device,
+                    'anomaly': anomaly,
+                    'score': anomaly.get('score', 0.5),
+                    'severity': anomaly.get('severity', 'medium'),
+                    'anomaly_score': anomaly.get('score', 0.5)
+                })
+
+        if not anomalous_nodes:
+            logger.warning("No upstream anomalous nodes found for propagation analysis")
+            # Fallback to simple centrality-based analysis
+            return self._fallback_simple_analysis(anomalies)
+
+        # 🔥 使用新的故障传播分析算法
+        try:
+            candidates = self.graph_analyzer.analyze_failure_propagation(
+                target_node=target_node,
+                anomalous_nodes=anomalous_nodes,
+                max_depth=3
+            )
+
+            if not candidates:
+                logger.warning("No candidates found with propagation analysis, using fallback")
+                return self._fallback_simple_analysis(anomalies)
+
+            top_candidate = candidates[0]
+
+            # Generate enhanced explanation
+            explanation = self._generate_weighted_explanation(top_candidate, candidates[:5], target_node)
+
+            return {
+                'root_cause_device': top_candidate['node'],
+                'root_cause_anomaly': top_candidate.get('anomaly', {}),
+                'confidence': top_candidate['score'],
+                'path_score': top_candidate['path_score'],
+                'propagation_path': top_candidate['path'],
+                'explanation': explanation,
+                'candidates': candidates[:5],
+                'method': 'weighted_propagation'
+            }
+
+        except Exception as e:
+            logger.error(f"Error in weighted propagation analysis: {e}")
+            # Fallback to simple analysis
+            return self._fallback_simple_analysis(anomalies)
+
+    def _fallback_simple_analysis(self, anomalies: List[Dict]) -> Dict:
+        """
+        Fallback analysis using simple centrality metrics
+        Used when weighted propagation analysis fails
+        """
         # Get centrality metrics
         centrality = self.graph_analyzer.get_centrality_metrics()
 
@@ -405,8 +717,40 @@ class RootCauseInferenceEngine:
             'root_cause_anomaly': top_candidate['anomaly'],
             'confidence': top_candidate['combined_score'],
             'explanation': explanation,
-            'candidates': candidates[:5]
+            'candidates': candidates[:5],
+            'method': 'simple_centrality'
         }
+
+    def _generate_weighted_explanation(self, top_candidate: Dict, all_candidates: List[Dict], target_node: str) -> str:
+        """Generate human-readable explanation using weighted propagation results"""
+        device = top_candidate['node']
+        path = top_candidate.get('path', [])
+        path_score = top_candidate['path_score']
+        confidence = top_candidate['score']
+
+        anomaly = top_candidate.get('anomaly', {})
+        anomaly_type = anomaly.get('anomaly_type', 'unknown')
+        metric = anomaly.get('metric_name', 'unknown metric')
+        reason = anomaly.get('reason', '')
+
+        explanation_parts = [
+            f"Root cause identified at device '{device}' using weighted failure propagation analysis",
+            f"Target node: {target_node}",
+            f"Anomaly type: {anomaly_type}",
+            f"Affected metric: {metric}",
+            f"Detection reason: {reason}",
+            f"Propagation path: {' → '.join(path) if path else 'N/A'}",
+            f"Path score (product of criticalities): {path_score:.3f}",
+            f"Overall confidence: {confidence:.3f}"
+        ]
+
+        # Add criticality insights
+        if path and len(path) > 1:
+            explanation_parts.append("\nDependency analysis:")
+            for i in range(len(path) - 1):
+                explanation_parts.append(f"  {path[i]} → {path[i+1]}: High criticality path")
+
+        return "\n".join(explanation_parts)
 
     def _generate_explanation(self, top_candidate: Dict, all_candidates: List[Dict]) -> str:
         """Generate human-readable explanation"""
@@ -446,6 +790,7 @@ class RootCauseAnalysisService:
         self.event_correlator = EventCorrelator(correlation_window=CORRELATION_WINDOW)
         self.propagation_analyzer = None
         self.inference_engine = None
+        self.identity_mapper = None
 
         # Anomaly buffer
         self.anomaly_buffer = []
@@ -460,6 +805,11 @@ class RootCauseAnalysisService:
             )
             self.redis_client.ping()
             logger.info(f"Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+
+            # Initialize Identity Mapper with Redis
+            self.identity_mapper = IdentityMapper(redis_client=self.redis_client)
+            logger.info("Identity Mapper initialized with Redis cache")
+
             return True
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
@@ -498,8 +848,8 @@ class RootCauseAnalysisService:
             self.neo4j_driver.verify_connectivity()
             logger.info(f"Connected to Neo4j at {NEO4J_URI}")
 
-            # Initialize components
-            self.graph_analyzer = GraphDependencyAnalyzer(self.neo4j_driver)
+            # Initialize components with Identity Mapper
+            self.graph_analyzer = GraphDependencyAnalyzer(self.neo4j_driver, self.identity_mapper)
             self.propagation_analyzer = AnomalyPropagationAnalyzer(self.graph_analyzer)
             self.inference_engine = RootCauseInferenceEngine(self.graph_analyzer)
 
